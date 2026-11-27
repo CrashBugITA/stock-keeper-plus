@@ -128,8 +128,12 @@ public final class GaugeTracker {
 		MISSING, INCOMING, WAITING, PAUSED, SATISFIED, NO_TARGET
 	}
 
-	/** A gauge plus whether it was read live this time (false = from the cache). */
-	public record Entry(Gauge gauge, boolean live) {}
+	/**
+	 * A gauge plus whether it was read live this time (false = from the cache). For live gauges,
+	 * {@code panel} is Create's own panel, used for animations that change every frame (the bulb's
+	 * glow after a request, the result of the last request on each arrow).
+	 */
+	public record Entry(Gauge gauge, boolean live, @Nullable FactoryPanelBehaviour panel) {}
 
 	private static final Map<UUID, Map<FactoryPanelPosition, Gauge>> CACHE = new HashMap<>();
 	@Nullable
@@ -146,14 +150,14 @@ public final class GaugeTracker {
 		Minecraft mc = Minecraft.getInstance();
 		ClientLevel level = mc.level;
 		if (level == null || mc.player == null)
-			return entries(known, Set.of());
+			return entries(known, Map.of());
 
 		String dimension = level.dimension()
 			.location()
 			.toString();
 		long now = System.currentTimeMillis();
 		Set<Long> scannedChunks = new HashSet<>();
-		Set<FactoryPanelPosition> live = new HashSet<>();
+		Map<FactoryPanelPosition, FactoryPanelBehaviour> live = new HashMap<>();
 
 		ChunkPos center = mc.player.chunkPosition();
 		int radius = mc.options.getEffectiveRenderDistance() + 1;
@@ -178,7 +182,7 @@ public final class GaugeTracker {
 						if (!gauge.equals(known.get(gauge.position())))
 							dirty = true;
 						known.put(gauge.position(), gauge);
-						live.add(gauge.position());
+						live.put(gauge.position(), panel);
 					}
 				}
 			}
@@ -188,15 +192,18 @@ public final class GaugeTracker {
 		dirty |= known.values()
 			.removeIf(gauge -> gauge.dimension()
 				.equals(dimension) && scannedChunks.contains(ChunkPos.asLong(gauge.position()
-				.pos())) && !live.contains(gauge.position()));
+				.pos())) && !live.containsKey(gauge.position()));
 
 		return entries(known, live);
 	}
 
-	private static List<Entry> entries(Map<FactoryPanelPosition, Gauge> known, Set<FactoryPanelPosition> live) {
+	private static List<Entry> entries(Map<FactoryPanelPosition, Gauge> known,
+		Map<FactoryPanelPosition, FactoryPanelBehaviour> live) {
 		List<Entry> result = new ArrayList<>(known.size());
-		for (Gauge gauge : known.values())
-			result.add(new Entry(gauge, live.contains(gauge.position())));
+		for (Gauge gauge : known.values()) {
+			FactoryPanelBehaviour panel = live.get(gauge.position());
+			result.add(new Entry(gauge, panel != null, panel));
+		}
 		return result;
 	}
 

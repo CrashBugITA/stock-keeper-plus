@@ -12,12 +12,16 @@ import java.util.UUID;
 import org.jetbrains.annotations.Nullable;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBehaviour;
+import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelConnection;
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelPosition;
 import com.simibubi.create.foundation.gui.AllGuiTextures;
 import com.stockkeeperplus.client.GaugeTracker.Entry;
 import com.stockkeeperplus.client.GaugeTracker.Gauge;
 import com.stockkeeperplus.client.GaugeTracker.Source;
 
+import net.createmod.catnip.animation.AnimationTickHolder;
+import net.createmod.catnip.theme.Color;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -369,6 +373,8 @@ class GaugeTab {
 		PoseStack ms = graphics.pose();
 		ms.pushPose();
 		ms.translate(0, 0, 200); // above the item
+		if (gauge.targetCount() > 0) // Create only shows the bulb on gauges with a target amount
+			renderBulb(graphics, p.entry(), x, y);
 		if (zoom >= MIN_ZOOM_WITH_LABELS) {
 			String label = label(gauge);
 			int labelX = x + PANEL_SIZE / 2 - font.width(label) / 2;
@@ -407,6 +413,19 @@ class GaugeTab {
 		return COLOR_MISSING;
 	}
 
+	// Bulb textures in factory_panel.png (2x2 texels each)
+	private static final int GREEN_BULB_U = 9;
+	private static final int RED_BULB_U = 11;
+	private static final int BULB_V = 8;
+	// Colors Create blends the arrows towards right after a request (FactoryPanelRenderer)
+	private static final int REQUEST_SUCCESS = 0xEAF2EC;
+	private static final int REQUEST_FAILURE = 0xE5654B;
+	// Moving dashes on arrows that are waiting for ingredients
+	private static final int FLOW_PERIOD = 3 * TEXEL;
+	private static final int FLOW_DASH = TEXEL;
+	private static final float FLOW_SPEED = 0.5f; // pixels per tick
+	private static final float FLOW_HIGHLIGHT = 0.35f;
+
 	/** Width of an arrow line: one texel of the panel. */
 	private static final int LINE_WIDTH = TEXEL;
 	/** Arrow head: 3 texels wide at its base, narrowing to a point on the panel's edge. */
@@ -421,7 +440,17 @@ class GaugeTab {
 	private void renderArrows(GuiGraphics graphics, Placed target) {
 		Gauge gauge = target.entry()
 			.gauge();
-		int color = 0xFF000000 | gauge.arrowColor();
+		FactoryPanelBehaviour panel = target.entry()
+			.panel();
+		int baseColor = panel != null ? panel.getIngredientStatusColor() : gauge.arrowColor();
+		float glow = glow(target.entry());
+		boolean satisfied = panel != null ? panel.satisfied : gauge.satisfied();
+		boolean redstone = panel != null ? panel.redstonePowered : gauge.redstone();
+		boolean waiting = panel != null ? panel.waitingForNetwork : gauge.waiting();
+		boolean missingAddress = panel != null ? panel.isMissingAddress() : gauge.address()
+			.isBlank();
+		// Same rule as Create's arrows: they flow while the gauge is still asking for its ingredients.
+		boolean flowing = !missingAddress && !waiting && !satisfied && !redstone;
 		int startX = target.x() + PANEL_SIZE / 2;
 		int startY = target.y() + PANEL_SIZE / 2;
 
@@ -429,22 +458,93 @@ class GaugeTab {
 			String path = source.path();
 			if (path.isEmpty())
 				continue;
+
+			int color = baseColor;
+			if (!redstone && !waiting && glow > 0 && !satisfied) {
+				// Right after a request Create blends the arrow towards white (sent) or red (failed).
+				FactoryPanelConnection connection = panel == null ? null : panel.targetedBy.get(source.from());
+				boolean success = connection == null || connection.success;
+				float p = 1 - (1 - glow) * (1 - glow);
+				color = Color.mixColors(color, success ? REQUEST_SUCCESS : REQUEST_FAILURE, p);
+			}
+			color |= 0xFF000000;
+
 			int[] first = gridStep(path.charAt(0));
 			// The line starts at the base of the arrow head, so the head keeps its point.
 			int x = startX + first[0] * (PANEL_SIZE / 2 + HEAD_DEPTH);
 			int y = startY + first[1] * (PANEL_SIZE / 2 + HEAD_DEPTH);
 			int cellX = startX;
 			int cellY = startY;
+			int distance = 0; // along the line, from the arrow head outwards
+			int dashColor = 0xFF000000 | Color.mixColors(color, 0xFFFFFF, FLOW_HIGHLIGHT);
 			for (int i = 0; i < path.length(); i++) {
 				int[] step = gridStep(path.charAt(i));
 				cellX += step[0] * PITCH_X;
 				cellY += step[1] * PITCH_Y;
 				segment(graphics, x, y, cellX, cellY, color);
+				if (flowing)
+					flowDashes(graphics, x, y, cellX, cellY, distance, dashColor);
+				distance += Math.abs(cellX - x) + Math.abs(cellY - y);
 				x = cellX;
 				y = cellY;
 			}
 			arrowHead(graphics, startX, startY, first[0], first[1], color);
 		}
+	}
+
+	/** Brightness of the gauge's bulb, 0..1, as Create animates it (1 right after a request). */
+	private static float glow(Entry entry) {
+		if (entry.panel() != null)
+			return entry.panel().bulb.getValue(AnimationTickHolder.getPartialTicksUI());
+		Gauge gauge = entry.gauge();
+		return gauge.satisfied() || gauge.redstone() ? 1 : 0;
+	}
+
+	/**
+	 * Lighter dashes moving along a line segment towards the receiving gauge, like the animated
+	 * texture Create uses on arrows that are still waiting for their ingredients.
+	 */
+	private static void flowDashes(GuiGraphics graphics, int x1, int y1, int x2, int y2, int distanceFromHead,
+		int color) {
+		int length = Math.abs(x2 - x1) + Math.abs(y2 - y1);
+		if (length == 0)
+			return;
+		int dx = Integer.signum(x2 - x1);
+		int dy = Integer.signum(y2 - y1);
+		float time = AnimationTickHolder.getRenderTime() * FLOW_SPEED;
+		// A dash sits where (distance + time) is a multiple of the period, so it moves towards the head.
+		int start = Math.floorMod((int) -time - distanceFromHead, FLOW_PERIOD);
+		int half = LINE_WIDTH / 2;
+		for (int t = start; t < length; t += FLOW_PERIOD) {
+			int end = Math.min(length, t + FLOW_DASH);
+			int ax = x1 + dx * t, ay = y1 + dy * t;
+			int bx = x1 + dx * end, by = y1 + dy * end;
+			graphics.fill(Math.min(ax, bx) - (dy != 0 ? half : 0), Math.min(ay, by) - (dx != 0 ? half : 0),
+				Math.max(ax, bx) + (dy != 0 ? half : 0), Math.max(ay, by) + (dx != 0 ? half : 0), color);
+		}
+	}
+
+	/**
+	 * The gauge's bulb in its top-right corner (Create's bulb_light / bulb_red models: 2x2 texels,
+	 * half outside the panel), red when paused by redstone or missing its address. It lights up with
+	 * the bulb's glow: steady when the gauge is satisfied, a flash fading out after each request.
+	 */
+	private static void renderBulb(GuiGraphics graphics, Entry entry, int x, int y) {
+		Gauge gauge = entry.gauge();
+		FactoryPanelBehaviour panel = entry.panel();
+		boolean red = panel != null ? panel.redstonePowered || panel.isMissingAddress()
+			: gauge.redstone() || gauge.address()
+				.isBlank() && !gauge.sources()
+				.isEmpty();
+		int size = 2 * TEXEL;
+		int bulbX = x + PANEL_SIZE - TEXEL;
+		int bulbY = y - TEXEL;
+		graphics.blit(PANEL_TEXTURE, bulbX, bulbY, size, size, red ? RED_BULB_U : GREEN_BULB_U, BULB_V, 2, 2, 16, 16);
+		float glow = glow(entry);
+		if (glow > 0.5f)
+			graphics.fill(bulbX, bulbY, bulbX + size, bulbY + size, ((int) ((glow - 0.5f) * 2 * 150) << 24) | 0xFFFFFF);
+		else
+			graphics.fill(bulbX, bulbY, bulbX + size, bulbY + size, ((int) ((0.5f - glow) * 2 * 120) << 24));
 	}
 
 	/**
