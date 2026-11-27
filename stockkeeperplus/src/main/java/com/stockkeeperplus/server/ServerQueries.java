@@ -16,6 +16,8 @@ import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlockEntit
 import com.simibubi.create.content.logistics.packager.InventorySummary;
 import com.simibubi.create.content.logistics.packagerLink.LogisticallyLinkedBehaviour;
 import com.simibubi.create.content.logistics.packagerLink.PackagerLinkBlockEntity;
+import com.simibubi.create.AllMenuTypes;
+import com.simibubi.create.content.logistics.stockTicker.StockKeeperCategoryMenu;
 import com.simibubi.create.content.logistics.stockTicker.StockKeeperRequestMenu;
 import com.simibubi.create.content.logistics.stockTicker.StockTickerBlockEntity;
 import com.stockkeeperplus.StockKeeperPlus;
@@ -32,6 +34,7 @@ import com.stockkeeperplus.network.Payloads.StorageResponse;
 import net.createmod.catnip.math.BlockFace;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -168,15 +171,32 @@ public final class ServerQueries {
 		return result;
 	}
 
-	/** Network of the Stock Keeper (or Remote Terminal) the player has open, or null. */
+	/**
+	 * Network of the Stock Keeper (or Remote Terminal) the player has open, or null.
+	 * <p>
+	 * Checked by menu type, not class: on the server Create builds the request menu as a
+	 * StockKeeperCategoryMenu with the request menu's type (StockKeeperRequestMenu.create), while
+	 * Create: Remote Terminal uses a StockKeeperRequestMenu subclass.
+	 */
 	@Nullable
 	private static UUID openNetwork(ServerPlayer player) {
-		if (!(player.containerMenu instanceof StockKeeperRequestMenu menu))
-			return null;
-		StockTickerBlockEntity ticker = menu.contentHolder;
+		AbstractContainerMenu open = player.containerMenu;
+		StockTickerBlockEntity ticker = null;
+		if (open instanceof StockKeeperRequestMenu menu)
+			ticker = menu.contentHolder;
+		else if (open instanceof StockKeeperCategoryMenu menu && isRequestMenu(menu))
+			ticker = menu.contentHolder;
 		if (ticker == null || ticker.isRemoved() || ticker.behaviour == null)
 			return null;
 		return ticker.behaviour.freqId;
+	}
+
+	private static boolean isRequestMenu(AbstractContainerMenu menu) {
+		try {
+			return menu.getType() == AllMenuTypes.STOCK_KEEPER_REQUEST.get();
+		} catch (UnsupportedOperationException e) {
+			return false; // menus without a registered type
+		}
 	}
 
 	private static boolean allowed(ServerPlayer player, int kind, int interval) {
