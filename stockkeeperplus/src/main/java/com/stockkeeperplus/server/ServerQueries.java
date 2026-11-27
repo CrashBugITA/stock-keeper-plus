@@ -18,6 +18,7 @@ import com.simibubi.create.content.logistics.packagerLink.LogisticallyLinkedBeha
 import com.simibubi.create.content.logistics.packagerLink.PackagerLinkBlockEntity;
 import com.simibubi.create.content.logistics.stockTicker.StockKeeperRequestMenu;
 import com.simibubi.create.content.logistics.stockTicker.StockTickerBlockEntity;
+import com.stockkeeperplus.StockKeeperPlus;
 import com.stockkeeperplus.common.ContainerData;
 import com.stockkeeperplus.common.GaugeData;
 import com.stockkeeperplus.network.Payloads.ContentsRequest;
@@ -46,7 +47,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public final class ServerQueries {
 	private static final int GAUGES_INTERVAL = 10; // ticks
 	private static final int STORAGE_INTERVAL = 20;
-	private static final int CONTENTS_INTERVAL = 4;
+	private static final int CONTENTS_INTERVAL = 2;
 	private static final int MAX_GAUGES = 4096;
 	private static final int MAX_CONTAINERS = 2048;
 	private static final int MAX_REQUESTED_CONTAINERS = 256;
@@ -58,7 +59,7 @@ public final class ServerQueries {
 	private ServerQueries() {}
 
 	public static void onGauges(GaugesRequest request, IPayloadContext context) {
-		context.enqueueWork(() -> {
+		context.enqueueWork(() -> safely("onGauges", () -> {
 			if (!(context.player() instanceof ServerPlayer player) || !allowed(player, 0, GAUGES_INTERVAL))
 				return;
 			UUID network = openNetwork(player);
@@ -77,11 +78,11 @@ public final class ServerQueries {
 					gauges.add(gauge);
 			}
 			context.reply(new GaugesResponse(gauges));
-		});
+		}));
 	}
 
 	public static void onStorage(StorageRequest request, IPayloadContext context) {
-		context.enqueueWork(() -> {
+		context.enqueueWork(() -> safely("onStorage", () -> {
 			if (!(context.player() instanceof ServerPlayer player) || !allowed(player, 1, STORAGE_INTERVAL))
 				return;
 			UUID network = openNetwork(player);
@@ -97,11 +98,11 @@ public final class ServerQueries {
 					containers.putIfAbsent(container.key(), container);
 			}
 			context.reply(new StorageResponse(new ArrayList<>(containers.values())));
-		});
+		}));
 	}
 
 	public static void onContents(ContentsRequest request, IPayloadContext context) {
-		context.enqueueWork(() -> {
+		context.enqueueWork(() -> safely("onContents", () -> {
 			if (!(context.player() instanceof ServerPlayer player) || !allowed(player, 2, CONTENTS_INTERVAL))
 				return;
 			UUID network = openNetwork(player);
@@ -146,7 +147,16 @@ public final class ServerQueries {
 				items.add(new ItemCount(stack.stack.copyWithCount(1), stack.count));
 			}
 			context.reply(new ContentsResponse(request.containers(), items));
-		});
+		}));
+	}
+
+	/** Runs a request handler, logging failures (the work queue would swallow them silently). */
+	private static void safely(String what, Runnable handler) {
+		try {
+			handler.run();
+		} catch (RuntimeException e) {
+			StockKeeperPlus.LOGGER.error("Stock Keeper Plus: {} request failed", what, e);
+		}
 	}
 
 	/** Packager Links of the network that the server has loaded (Create's own list). */

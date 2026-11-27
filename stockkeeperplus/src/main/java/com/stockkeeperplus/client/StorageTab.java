@@ -407,7 +407,10 @@ class StorageTab {
 				.withStyle(ChatFormatting.DARK_GRAY));
 
 		// What is inside: asked from the server while hovering (only if it has the mod).
-		if (ServerLink.available()) {
+		if (!ServerLink.available()) {
+			lines.add(Component.translatable("stockkeeperplus.storage.tooltip.no_server_mod")
+				.withStyle(ChatFormatting.DARK_GRAY));
+		} else {
 			ServerLink.Contents contents = ServerLink.contents(row.positions());
 			if (contents == null) {
 				lines.add(Component.translatable("stockkeeperplus.storage.tooltip.loading")

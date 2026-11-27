@@ -1,11 +1,9 @@
 package com.stockkeeperplus.client;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -34,6 +32,8 @@ public final class ServerLink {
 	private static final long GAUGES_INTERVAL_MS = 1000;
 	private static final long STORAGE_INTERVAL_MS = 2000;
 	private static final long CONTENTS_MAX_AGE_MS = 3000;
+	/** Ask again if no answer came within this time (the server skips requests sent too close together). */
+	private static final long CONTENTS_RETRY_MS = 1000;
 	/** Data older than this is not used anymore (the view was probably closed meanwhile). */
 	private static final long FRESH_MS = 6000;
 
@@ -48,7 +48,8 @@ public final class ServerLink {
 	private static long containersAsked;
 
 	private static final Map<List<GlobalPos>, Contents> CONTENTS = new HashMap<>();
-	private static final Set<List<GlobalPos>> PENDING = new HashSet<>();
+	/** Requests sent and not answered yet, with when they were sent. */
+	private static final Map<List<GlobalPos>, Long> PENDING = new HashMap<>();
 
 	@Nullable
 	private static ClientPacketListener lastConnection;
@@ -128,8 +129,12 @@ public final class ServerLink {
 			return null;
 		Contents known = CONTENTS.get(positions);
 		long now = System.currentTimeMillis();
-		if ((known == null || now - known.time() > CONTENTS_MAX_AGE_MS) && PENDING.add(positions))
-			PacketDistributor.sendToServer(new ContentsRequest(positions));
+		Long sent = PENDING.get(positions);
+		boolean waiting = sent != null && now - sent < CONTENTS_RETRY_MS;
+		if ((known == null || now - known.time() > CONTENTS_MAX_AGE_MS) && !waiting) {
+			PENDING.put(List.copyOf(positions), now);
+			PacketDistributor.sendToServer(new ContentsRequest(List.copyOf(positions)));
+		}
 		return known;
 	}
 
