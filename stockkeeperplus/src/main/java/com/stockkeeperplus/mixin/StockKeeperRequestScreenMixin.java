@@ -1,5 +1,7 @@
 package com.stockkeeperplus.mixin;
 
+import java.util.List;
+
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -7,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import com.simibubi.create.content.logistics.stockTicker.CraftableBigItemStack;
 import com.simibubi.create.content.logistics.stockTicker.StockKeeperRequestScreen;
 import com.stockkeeperplus.client.ItemGridCover;
 
@@ -15,7 +18,7 @@ import net.createmod.catnip.data.Couple;
 /**
  * While the Factory Gauges tab covers the item grid, nothing above the order row counts as hovered:
  * no item tooltips, no clicks or scroll-wheel amounts on hidden items, no JEI lookups.
- * The order row below stays usable.
+ * The order row below and the JEI recipe row stay usable.
  */
 @Mixin(StockKeeperRequestScreen.class)
 public abstract class StockKeeperRequestScreenMixin {
@@ -26,9 +29,20 @@ public abstract class StockKeeperRequestScreenMixin {
 	@Shadow
 	int orderY;
 
+	@Shadow
+	@Final
+	int rowHeight;
+
+	@Shadow
+	public List<CraftableBigItemStack> recipesToOrder;
+
 	@Inject(method = "getHoveredSlot", at = @At("HEAD"), cancellable = true)
 	private void stockkeeperplus$hideCoveredGrid(int x, int y, CallbackInfoReturnable<Couple<Integer>> cir) {
-		if ((Object) this instanceof ItemGridCover cover && cover.stockkeeperplus$coversItemGrid() && y < orderY)
+		if (!((Object) this instanceof ItemGridCover cover) || !cover.stockkeeperplus$coversItemGrid() || y >= orderY)
+			return;
+		// The JEI recipe row (above the order row) is drawn over the covering tabs too, so it stays usable.
+		boolean recipeRow = !recipesToOrder.isEmpty() && y >= orderY - 31 && y < orderY - 31 + rowHeight;
+		if (!recipeRow)
 			cir.setReturnValue(noneHovered);
 	}
 }

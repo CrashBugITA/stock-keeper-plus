@@ -6,9 +6,11 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
+import com.simibubi.create.content.logistics.BigItemStack;
 import com.simibubi.create.content.logistics.stockTicker.StockKeeperRequestScreen;
 
 import net.createmod.catnip.data.Couple;
+import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * Exposes the non-public parts of Create's Stock Keeper screen that the subclass needs.
@@ -61,4 +63,18 @@ public interface StockKeeperRequestScreenAccessor {
 
 	@Accessor("itemsY")
 	int stockkeeperplus$getItemsY();
+
+	@Accessor("orderY")
+	int stockkeeperplus$getOrderY();
+
+	@Accessor("windowWidth")
+	int stockkeeperplus$getWindowWidth();
+
+	@Invoker("renderItemEntry")
+	void stockkeeperplus$renderItemEntry(GuiGraphics graphics, float scale, BigItemStack entry, boolean hovered,
+		boolean isRenderingOrders);
+
+	/** Sends the order, as Shift+Enter does. */
+	@Invoker("sendIt")
+	void stockkeeperplus$sendIt();
 }

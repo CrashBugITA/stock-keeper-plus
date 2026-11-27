@@ -259,9 +259,13 @@ class StorageTab {
 			scroll = Mth.clamp(scroll, 0, Math.max(0, rows.size() - visibleRows()));
 			graphics.enableScissor(left() + 16, listTop(), left() + 215, coverBottom());
 			int hovered = rowIndexAt(rows, mouseX, mouseY);
+			// Widest size text among the visible rows, so the bars line up in one column.
+			int sizeWidth = 0;
+			for (int index = scroll; index < rows.size() && index < scroll + visibleRows(); index++)
+				sizeWidth = Math.max(sizeWidth, font.width(sizeText(rows.get(index))));
 			for (int index = scroll; index < rows.size() && index < scroll + visibleRows(); index++)
 				renderRow(graphics, font, rows.get(index), rowY(index), index == hovered,
-					index == hovered && isOverTag(index, mouseX, mouseY));
+					index == hovered && isOverTag(index, mouseX, mouseY), sizeWidth);
 			graphics.disableScissor();
 		}
 
@@ -295,7 +299,16 @@ class StorageTab {
 			y + 1, COLOR_TEXT);
 	}
 
-	private void renderRow(GuiGraphics graphics, Font font, Row row, int y, boolean hovered, boolean tagHovered) {
+	/** "used/size" when the fill is known, otherwise just the size. */
+	private static String sizeText(Row row) {
+		long used = row.usedSlots();
+		return used >= 0 ? CountFormat.exact(used) + "/" + CountFormat.exact(row.slots())
+			: Component.translatable("stockkeeperplus.storage.slot_count", CountFormat.exact(row.slots()))
+				.getString();
+	}
+
+	private void renderRow(GuiGraphics graphics, Font font, Row row, int y, boolean hovered, boolean tagHovered,
+		int sizeWidth) {
 		int x = rowX();
 		if (hovered)
 			graphics.fill(x - 1, y, rowRight(), y + ROW_HEIGHT, 0x20FFFFFF);
@@ -308,13 +321,11 @@ class StorageTab {
 
 		// Right side: how full the row is (when the server tells us), and its size.
 		long used = row.usedSlots();
-		String size = used >= 0 ? CountFormat.exact(used) + "/" + CountFormat.exact(row.slots())
-			: Component.translatable("stockkeeperplus.storage.slot_count", CountFormat.exact(row.slots()))
-				.getString();
+		String size = sizeText(row);
 		int sizeX = right - font.width(size);
 		graphics.drawString(font, size, sizeX, y + 6, live ? COLOR_DIM : COLOR_STALE, false);
 		if (used >= 0) {
-			sizeX -= ROW_BAR_WIDTH + 4;
+			sizeX = right - sizeWidth - ROW_BAR_WIDTH - 4;
 			FillBar.render(graphics, sizeX, y + 7, ROW_BAR_WIDTH, ROW_BAR_HEIGHT,
 				row.slots() == 0 ? 0 : (double) used / row.slots());
 		}

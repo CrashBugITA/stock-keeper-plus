@@ -7,9 +7,13 @@ import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL11;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.content.logistics.BigItemStack;
+import com.simibubi.create.content.logistics.stockTicker.CraftableBigItemStack;
 import com.simibubi.create.content.logistics.stockTicker.StockKeeperRequestMenu;
 import com.simibubi.create.content.logistics.stockTicker.StockKeeperRequestScreen;
 import com.simibubi.create.foundation.gui.AllGuiTextures;
@@ -20,6 +24,7 @@ import com.stockkeeperplus.mixin.StockTickerBlockEntityAccessor;
 
 import net.createmod.catnip.data.Couple;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.HolderLookup;
@@ -430,6 +435,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 			return;
 		if (renderShelfBarTooltip(graphics, mouseX, mouseY))
 			return;
+		if (tab != TAB_STOCK && isOverRecipeRow(mouseX, mouseY))
+			return; // Create already drew the recipe's tooltip
 		if (tab == TAB_GAUGES) {
 			gaugeTab.renderTooltip(graphics, mouseX, mouseY);
 			return;
@@ -508,6 +515,12 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		// While a group name is being typed in the Storage tab, keys belong to that field.
 		if (tab == TAB_STORAGE && storageTab.keyPressed(keyCode, scanCode, modifiers))
 			return true;
+		// Numpad Enter alone sends the order (Create only reacts to Shift+Enter, which a numpad Enter
+		// does not give on every keyboard).
+		if (keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+			accessor().stockkeeperplus$sendIt();
+			return true;
+		}
 		if (KeyBindings.matches(KeyBindings.FOCUS_SEARCH, keyCode, scanCode)) {
 			focusSearch();
 			return true;
@@ -579,7 +592,17 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	protected void renderBg(GuiGraphics graphics, float partialTicks, int mouseX, int mouseY) {
 		if (this == minecraft.screen)
 			renderTabs(graphics); // behind the window, so its left edge overlaps the tabs
-		super.renderBg(graphics, partialTicks, mouseX, mouseY);
+		if (tab != TAB_STOCK && !recipesToOrder.isEmpty()) {
+			// Create would draw the recipe row under the cover; it is drawn once, on top, below.
+			List<CraftableBigItemStack> recipes = recipesToOrder;
+			recipesToOrder = new ArrayList<>();
+			try {
+				super.renderBg(graphics, partialTicks, mouseX, mouseY);
+			} finally {
+				recipesToOrder = recipes;
+			}
+		} else
+			super.renderBg(graphics, partialTicks, mouseX, mouseY);
 		if (this != minecraft.screen)
 			return; // same guard as Create: nothing is drawn during the Ponder fade-out
 		float scroll = itemScroll.getValue(partialTicks);
@@ -590,6 +613,51 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 			gaugeTab.render(graphics, mouseX, mouseY);
 		else if (tab == TAB_STORAGE)
 			storageTab.render(graphics, mouseX, mouseY, partialTicks);
+		if (tab != TAB_STOCK)
+			renderRecipeRow(graphics, mouseX, mouseY);
+	}
+
+	/** True over an entry of the JEI recipe row, which works on every tab. */
+	boolean isOverRecipeRow(double mouseX, double mouseY) {
+		return accessor().stockkeeperplus$getHoveredSlot((int) mouseX, (int) mouseY)
+			.getFirst() == -2;
+	}
+
+	/**
+	 * Create draws the JEI recipe row (a blueprint above the order row) with the item grid, so the
+	 * covering tabs hide it. Draw it again on top, the same way Create does.
+	 */
+	private void renderRecipeRow(GuiGraphics graphics, int mouseX, int mouseY) {
+		if (recipesToOrder.isEmpty())
+			return;
+		StockKeeperRequestScreenAccessor screen = accessor();
+		int colWidth = 20;
+		int jeiX = getGuiLeft() + (screen.stockkeeperplus$getWindowWidth() - colWidth * recipesToOrder.size()) / 2 + 1;
+		int jeiY = screen.stockkeeperplus$getOrderY() - 31;
+		Couple<Integer> hovered = screen.stockkeeperplus$getHoveredSlot(mouseX, mouseY);
+		// The covering tab is drawn with depth that would hide parts of the row: start from a clean
+		// depth buffer so the row always ends up on top, as in the Stock tab.
+		graphics.flush();
+		RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
+		PoseStack ms = graphics.pose();
+		ms.pushPose();
+		ms.translate(jeiX, jeiY, 200); // same depth as Create
+		int xoffset = -3;
+		AllGuiTextures.STOCK_KEEPER_REQUEST_BLUEPRINT_LEFT.render(graphics, xoffset, -3);
+		xoffset += 10;
+		for (int i = 0; i <= (recipesToOrder.size() - 1) * 5; i++) {
+			AllGuiTextures.STOCK_KEEPER_REQUEST_BLUEPRINT_MIDDLE.render(graphics, xoffset, -3);
+			xoffset += 4;
+		}
+		AllGuiTextures.STOCK_KEEPER_REQUEST_BLUEPRINT_RIGHT.render(graphics, xoffset, -3);
+		for (int index = 0; index < recipesToOrder.size(); index++) {
+			boolean isHovered = hovered.getFirst() == -2 && hovered.getSecond() == index;
+			ms.pushPose();
+			ms.translate(index * colWidth, 0, 0);
+			screen.stockkeeperplus$renderItemEntry(graphics, 1, recipesToOrder.get(index), isHovered, true);
+			ms.popPose();
+		}
+		ms.popPose();
 	}
 
 	/**
@@ -667,6 +735,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
 		if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && clickTab(mouseX, mouseY))
 			return true;
+		if (tab != TAB_STOCK && isOverRecipeRow(mouseX, mouseY))
+			return super.mouseClicked(mouseX, mouseY, button);
 		if (tab == TAB_GAUGES) {
 			if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && gaugeTab.mouseClicked(mouseX, mouseY))
 				return true;
@@ -860,6 +930,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		if (tab != TAB_STOCK && isOverRecipeRow(mouseX, mouseY))
+			return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
 		if (tab == TAB_STORAGE && storageTab.mouseScrolled(mouseX, mouseY, scrollY))
 			return true;
 		if (tab != TAB_STOCK) {
