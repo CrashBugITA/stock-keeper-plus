@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -18,115 +17,43 @@ import org.jetbrains.annotations.Nullable;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBehaviour;
-import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlock;
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlock.PanelSlot;
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlockEntity;
-import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelConnection;
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelPosition;
 import com.stockkeeperplus.StockKeeperPlus;
+import com.stockkeeperplus.common.GaugeData;
+import com.stockkeeperplus.common.GaugeData.Gauge;
+import com.stockkeeperplus.common.GaugeData.Source;
 
-import net.createmod.catnip.math.VecHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.Direction.Axis;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
-import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.loading.FMLPaths;
 
 /**
- * Finds the Factory Gauges of a logistics network, client-side only.
+ * Finds the Factory Gauges of a logistics network.
  * <p>
- * The server sends the full state of every gauge (item, target, level in storage, promises,
- * status, address, network) to clients, but only for chunks the client has loaded. So gauges near
- * the player are read live from the loaded block entities, and every gauge ever seen is kept in a
- * cache with the time it was last seen (stored per world in config/stockkeeperplus/gauges/), so
- * that far away gauges can still be shown, marked as not up to date.
+ * Minecraft sends the full state of every gauge (item, target, level in storage, promises, status,
+ * address, network) to clients, but only for chunks the client has loaded. So gauges near the
+ * player are read live from the loaded block entities. With the mod on the server too, the server
+ * also reports every gauge it has loaded (see {@link ServerLink}). Every gauge ever seen is kept in
+ * a cache with the time it was last seen (stored per world in config/stockkeeperplus/gauges/), so
+ * that gauges nobody has loaded can still be shown, marked as not up to date.
  */
 public final class GaugeTracker {
 	private static final Path DIR = FMLPaths.CONFIGDIR.get()
 		.resolve(StockKeeperPlus.MOD_ID)
 		.resolve("gauges");
-
-	/**
-	 * A gauge feeding into another one (an arrow in the world), with the amount used per craft.
-	 * {@code path} is the route Create draws for the arrow (FactoryPanelConnection.getPath): one
-	 * letter per half-block step (N, S, W, E in the panel's flat frame), starting next to the
-	 * receiving gauge and ending on the source.
-	 */
-	public record Source(FactoryPanelPosition from, int amount, String path) {}
-
-	/**
-	 * The display state of one gauge (one of the up to 4 panels on a gauge block).
-	 * <p>
-	 * {@code plane}, {@code column} and {@code row} place the panel on its wall: gauges with the same
-	 * plane are on the same flat surface facing the same way; column and row count half blocks (one
-	 * panel) to the right and down, as seen when looking at the wall.
-	 */
-	public record Gauge(String dimension, FactoryPanelPosition position, ItemStack item, int targetCount,
-		boolean upTo, int level, int promised, boolean satisfied, boolean promisedSatisfied, boolean waiting,
-		boolean redstone, String address, boolean restocker, long lastSeen, String plane, int column, int row,
-		List<Source> sources) {
-
-		public int stackSize() {
-			return Math.max(1, item.getMaxStackSize());
-		}
-
-		/** Target in items (Create stores it in stacks unless the gauge counts single items). */
-		public int targetItems() {
-			return upTo ? targetCount : targetCount * stackSize();
-		}
-
-		/** Items still needed after counting what is in storage and on the way. */
-		public int missingItems() {
-			return Math.max(0, targetItems() - level - promised);
-		}
-
-		public Status status() {
-			if (waiting)
-				return Status.WAITING;
-			if (redstone)
-				return Status.PAUSED;
-			if (targetCount == 0)
-				return Status.NO_TARGET;
-			if (satisfied)
-				return Status.SATISFIED;
-			if (promisedSatisfied)
-				return Status.INCOMING;
-			return Status.MISSING;
-		}
-
-		/** Color of the arrows into this gauge, as Create draws them (getIngredientStatusColor). */
-		public int arrowColor() {
-			boolean missingAddress = address.isBlank() && !sources.isEmpty();
-			if (targetCount == 0 || missingAddress || redstone)
-				return 0x888898;
-			if (waiting)
-				return 0x5B3B3B;
-			if (satisfied)
-				return 0x9EFF7F;
-			if (promisedSatisfied)
-				return 0x22AFAF;
-			return 0x3D6EBD;
-		}
-	}
-
-	/** In the order the Gauge tab lists them: what needs attention first. */
-	public enum Status {
-		MISSING, INCOMING, WAITING, PAUSED, SATISFIED, NO_TARGET
-	}
 
 	/**
 	 * A gauge plus whether it was read live this time (false = from the cache). For live gauges,
@@ -150,7 +77,7 @@ public final class GaugeTracker {
 		Minecraft mc = Minecraft.getInstance();
 		ClientLevel level = mc.level;
 		if (level == null || mc.player == null)
-			return entries(known, Map.of());
+			return entries(known, Map.of(), Set.of());
 
 		String dimension = level.dimension()
 			.location()
@@ -176,7 +103,7 @@ public final class GaugeTracker {
 						if (!panel.isActive() || !network.equals(panel.network) || panel.getFilter()
 							.isEmpty())
 							continue;
-						Gauge gauge = read(level, dimension, panelBlockEntity, panel, now);
+						Gauge gauge = GaugeData.read(level, panelBlockEntity, panel, now);
 						if (gauge == null)
 							continue;
 						if (!gauge.equals(known.get(gauge.position())))
@@ -194,57 +121,28 @@ public final class GaugeTracker {
 				.equals(dimension) && scannedChunks.contains(ChunkPos.asLong(gauge.position()
 				.pos())) && !live.containsKey(gauge.position()));
 
-		return entries(known, live);
+		// With the mod on the server too, it also reports the gauges the server has loaded.
+		Set<FactoryPanelPosition> fromServer = new HashSet<>();
+		List<Gauge> serverGauges = ServerLink.gauges();
+		if (serverGauges != null) {
+			for (Gauge gauge : serverGauges) {
+				known.put(gauge.position(), gauge);
+				fromServer.add(gauge.position());
+			}
+			dirty |= !serverGauges.isEmpty();
+		}
+
+		return entries(known, live, fromServer);
 	}
 
 	private static List<Entry> entries(Map<FactoryPanelPosition, Gauge> known,
-		Map<FactoryPanelPosition, FactoryPanelBehaviour> live) {
+		Map<FactoryPanelPosition, FactoryPanelBehaviour> live, Set<FactoryPanelPosition> fromServer) {
 		List<Entry> result = new ArrayList<>(known.size());
 		for (Gauge gauge : known.values()) {
 			FactoryPanelBehaviour panel = live.get(gauge.position());
-			result.add(new Entry(gauge, panel != null, panel));
+			result.add(new Entry(gauge, panel != null || fromServer.contains(gauge.position()), panel));
 		}
 		return result;
-	}
-
-	@Nullable
-	private static Gauge read(ClientLevel level, String dimension, FactoryPanelBlockEntity blockEntity,
-		FactoryPanelBehaviour panel, long now) {
-		FactoryPanelPosition position = panel.getPanelPosition();
-		BlockState state = level.getBlockState(position.pos());
-		if (!(state.getBlock() instanceof FactoryPanelBlock))
-			return null;
-
-		// Same transformation Create uses for the arrows between gauges
-		// (FactoryPanelConnection.calculatePathDiff): it brings the wall into a flat x/z frame where
-		// +x points to a panel's left and +z to its top.
-		float xRot = Mth.RAD_TO_DEG * FactoryPanelBlock.getXRot(state);
-		float yRot = Mth.RAD_TO_DEG * FactoryPanelBlock.getYRot(state);
-		Vec3 local = Vec3.atLowerCornerOf(position.pos());
-		local = VecHelper.rotate(local, -yRot, Axis.Y);
-		local = VecHelper.rotate(local, -xRot - 90, Axis.X);
-		local = VecHelper.rotate(local, -180, Axis.Y);
-		int column = -(int) Math.round(local.x * 2 + position.slot().xOffset);
-		int row = -(int) Math.round(local.z * 2 + position.slot().yOffset);
-		String plane = state.getValue(FactoryPanelBlock.FACE)
-			.getSerializedName() + "/" + state.getValue(FactoryPanelBlock.FACING)
-			.getSerializedName() + "/" + Math.round(local.y);
-
-		List<Source> sources = new ArrayList<>();
-		for (FactoryPanelConnection connection : panel.targetedBy.values()) {
-			StringBuilder path = new StringBuilder();
-			for (Direction step : connection.getPath(level, state, position))
-				path.append(step.getName()
-					.toUpperCase(Locale.ROOT)
-					.charAt(0));
-			sources.add(new Source(connection.from, connection.amount, path.toString()));
-		}
-
-		return new Gauge(dimension, position, panel.getFilter()
-			.copyWithCount(1), panel.count, panel.upTo, panel.getLevelInStorage(), panel.getPromised(), panel.satisfied,
-			panel.promisedSatisfied, panel.waitingForNetwork, panel.redstonePowered,
-			Objects.requireNonNullElse(panel.recipeAddress, ""), blockEntity.restocker, now, plane, column, row,
-			List.copyOf(sources));
 	}
 
 	// ---------------------------------------------------------------------------------------------

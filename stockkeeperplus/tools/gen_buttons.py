@@ -6,6 +6,7 @@ as the search-sync button of Create's Stock Keeper. Requires Pillow.
 Order: 0 sort quantity high->low, 1 sort quantity low->high, 2 sort name, 3 sort mod.
 Row 2 (v = 16): favorite star, 5x5 at u = 0.
 Row 3 (v = 32): side tabs, 24x22: inactive at u = 0, active at u = 24.
+Group tag icon, 9x6, at u = 48, v = 32.
 """
 import sys
 from PIL import Image
@@ -140,8 +141,33 @@ def tab(active):
     return img
 
 
+TAG_OUTLINE = (74, 45, 49, 255)
+TAG_FILL = (237, 216, 187, 255)   # Create's address tag paper
+TAG_SHADE = (205, 188, 168, 255)
+TAG = [
+    "..#######",
+    ".#ffffff#",
+    "#ff##fff#",
+    "#ff##fff#",
+    ".#ssssss#",
+    "..#######",
+]
+
+
+def tag():
+    img = Image.new("RGBA", (9, 6), (0, 0, 0, 0))
+    p = img.load()
+    colors = {"#": TAG_OUTLINE, "f": TAG_FILL, "s": TAG_SHADE}
+    for y, row in enumerate(TAG):
+        for x, ch in enumerate(row):
+            if ch in colors:
+                p[x, y] = colors[ch]
+    return img
+
+
 def main(out):
     sheet = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    sheet.alpha_composite(tag(), (48, 32))
     sheet.alpha_composite(tab(False), (0, 32))
     sheet.alpha_composite(tab(True), (24, 32))
     sheet.alpha_composite(star(), (0, 16))

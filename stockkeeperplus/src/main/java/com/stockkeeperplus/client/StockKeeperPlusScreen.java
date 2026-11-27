@@ -133,6 +133,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		}
 		if (tab == TAB_GAUGES)
 			gaugeTab.tick();
+		if (tab == TAB_STORAGE)
+			ServerLink.pollStorage(); // no-op unless the server has the mod
 		if (--ticksUntilStorageUpdate <= 0)
 			refreshStorage();
 	}
@@ -503,6 +505,9 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 
 	@Override
 	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		// While a group name is being typed in the Storage tab, keys belong to that field.
+		if (tab == TAB_STORAGE && storageTab.keyPressed(keyCode, scanCode, modifiers))
+			return true;
 		if (KeyBindings.matches(KeyBindings.FOCUS_SEARCH, keyCode, scanCode)) {
 			focusSearch();
 			return true;
@@ -584,7 +589,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		if (tab == TAB_GAUGES)
 			gaugeTab.render(graphics, mouseX, mouseY);
 		else if (tab == TAB_STORAGE)
-			storageTab.render(graphics, mouseX, mouseY);
+			storageTab.render(graphics, mouseX, mouseY, partialTicks);
 	}
 
 	/**
@@ -670,7 +675,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 			return super.mouseClicked(mouseX, mouseY, button);
 		}
 		if (tab == TAB_STORAGE) {
-			if (storageTab.isOverPanel(mouseX, mouseY))
+			if (storageTab.mouseClicked(mouseX, mouseY, button))
 				return true;
 			return super.mouseClicked(mouseX, mouseY, button);
 		}
@@ -899,5 +904,12 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && gaugeTab.mouseReleased())
 			return true;
 		return super.mouseReleased(mouseX, mouseY, button);
+	}
+
+	@Override
+	public boolean charTyped(char codePoint, int modifiers) {
+		if (tab == TAB_STORAGE && storageTab.charTyped(codePoint, modifiers))
+			return true;
+		return super.charTyped(codePoint, modifiers);
 	}
 }

@@ -6,31 +6,54 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jetbrains.annotations.Nullable;
+import org.lwjgl.glfw.GLFW;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.foundation.gui.AllGuiTextures;
+import com.stockkeeperplus.StockKeeperPlus;
 import com.stockkeeperplus.client.StorageTracker.Entry;
 import com.stockkeeperplus.client.StorageTracker.Summary;
+import com.stockkeeperplus.common.ContainerData;
+import com.stockkeeperplus.network.Payloads.ItemCount;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.core.GlobalPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * The "Storage" tab: how full the network's storage is, and which containers it is made of.
+ * The "Storage" tab: how full the network's storage is, and the containers it is made of.
  * <p>
  * Top: slots used and items stored against what the known containers can hold, and the number of
- * different items. Below: the containers, grouped by block, with how many slots they add.
+ * different items (estimated from the stock, works everywhere). Below: one row per container,
+ * except containers the player put in the same group, which share one row. The tag button on a
+ * row puts it in a group (or renames the group). Hovering a row shows what is inside when the
+ * server has the mod.
  */
 class StorageTab {
 	private static final int ROW_HEIGHT = 20;
 	private static final int SUMMARY_ROW = 14;
 	private static final int BAR_HEIGHT = 8;
+	private static final int ROW_BAR_WIDTH = 30;
+	private static final int ROW_BAR_HEIGHT = 5;
+	private static final int MAX_CONTENT_LINES = 12;
+
+	private static final ResourceLocation BUTTONS =
+		ResourceLocation.fromNamespaceAndPath(StockKeeperPlus.MOD_ID, "textures/gui/buttons.png");
+	private static final int TAG_U = 48;
+	private static final int TAG_V = 32;
+	private static final int TAG_WIDTH = 9;
+	private static final int TAG_HEIGHT = 6;
 
 	// Create's Stock Keeper text colors
 	private static final int COLOR_TEXT = 0xF8F8EC;
@@ -38,11 +61,77 @@ class StorageTab {
 	private static final int COLOR_DIM = 0xCDBCA8;
 	private static final int COLOR_STALE = 0xA89B8C;
 
-	/** All containers of one block type. */
-	private record Group(ItemStack icon, Component name, int count, long slots, boolean allLive) {}
+	/** One row: a container on its own, or all containers of a group. */
+	private record Row(@Nullable String group, List<Entry> entries) {
+		ContainerData first() {
+			return entries.get(0)
+				.container();
+		}
+
+		ItemStack icon() {
+			return first().icon();
+		}
+
+		Component name() {
+			return group != null ? Component.literal(group) : icon().getHoverName();
+		}
+
+		long slots() {
+			long total = 0;
+			for (Entry entry : entries)
+				total += entry.container()
+					.slots();
+			return total;
+		}
+
+		/** Slots in use, or -1 if not known for every container of the row. */
+		long usedSlots() {
+			long used = 0;
+			for (Entry entry : entries) {
+				if (!entry.container()
+					.fillKnown())
+					return -1;
+				used += entry.container()
+					.usedSlots();
+			}
+			return used;
+		}
+
+		boolean allLive() {
+			for (Entry entry : entries)
+				if (!entry.live())
+					return false;
+			return true;
+		}
+
+		long oldestSeen() {
+			long oldest = Long.MAX_VALUE;
+			for (Entry entry : entries)
+				oldest = Math.min(oldest, entry.container()
+					.lastSeen());
+			return oldest;
+		}
+
+		List<GlobalPos> positions() {
+			List<GlobalPos> positions = new ArrayList<>();
+			for (Entry entry : entries) {
+				ContainerData c = entry.container();
+				ResourceLocation dimension = ResourceLocation.tryParse(c.dimension());
+				if (dimension != null)
+					positions.add(GlobalPos.of(ResourceKey.create(Registries.DIMENSION, dimension), c.pos()));
+			}
+			return positions;
+		}
+	}
 
 	private final StockKeeperPlusScreen screen;
 	private int scroll;
+
+	/** The row whose group is being edited, and the text field for it. */
+	@Nullable
+	private Row editing;
+	@Nullable
+	private EditBox nameBox;
 
 	StorageTab(StockKeeperPlusScreen screen) {
 		this.screen = screen;
@@ -84,57 +173,104 @@ class StorageTab {
 		return Math.max(0, (coverBottom() - 2 - listTop()) / ROW_HEIGHT);
 	}
 
+	private int tagX() {
+		return rowRight() - TAG_WIDTH - 1;
+	}
+
+	private int tagY(int rowY) {
+		return rowY + (ROW_HEIGHT - TAG_HEIGHT) / 2;
+	}
+
 	boolean isOverPanel(double mouseX, double mouseY) {
 		return mouseX >= left() + 16 && mouseX < left() + 215 && mouseY >= coverTop() && mouseY < coverBottom();
 	}
 
-	/** 0 = slots row, 1 = items row, 2 = types row, -1 = none. */
+	/** 0 = slots row, 1 = items row, 2 = different items row, -1 = none. */
 	private int summaryRowAt(double mouseX, double mouseY) {
-		if (mouseX < rowX() || mouseX >= rowRight() || mouseY < summaryTop())
+		if (mouseX < rowX() || mouseX >= rowRight() || mouseY < summaryTop() || mouseY >= listTop())
 			return -1;
 		int row = (int) ((mouseY - summaryTop()) / SUMMARY_ROW);
 		return row < 3 ? row : -1;
+	}
+
+	/** Index in the row list under the mouse, or -1. */
+	private int rowIndexAt(List<Row> rows, double mouseX, double mouseY) {
+		if (mouseX < rowX() || mouseX >= rowRight() || mouseY < listTop())
+			return -1;
+		int visible = (int) ((mouseY - listTop()) / ROW_HEIGHT);
+		if (visible >= visibleRows())
+			return -1;
+		int index = scroll + visible;
+		return index < rows.size() ? index : -1;
+	}
+
+	private int rowY(int index) {
+		return listTop() + (index - scroll) * ROW_HEIGHT;
+	}
+
+	private boolean isOverTag(int index, double mouseX, double mouseY) {
+		int y = tagY(rowY(index));
+		return mouseX >= tagX() - 1 && mouseX < tagX() + TAG_WIDTH + 1 && mouseY >= y - 1 && mouseY < y + TAG_HEIGHT + 1;
 	}
 
 	// ---------------------------------------------------------------------------------------------
 	// Data
 	// ---------------------------------------------------------------------------------------------
 
-	private List<Group> groups() {
-		Map<ResourceLocation, List<Entry>> byBlock = new LinkedHashMap<>();
-		for (Entry entry : screen.storageEntries())
-			byBlock.computeIfAbsent(entry.container()
-				.block(), b -> new ArrayList<>())
-				.add(entry);
-		List<Group> groups = new ArrayList<>();
-		for (List<Entry> entries : byBlock.values()) {
-			ItemStack icon = entries.get(0)
-				.container()
-				.icon();
-			long slots = 0;
-			boolean allLive = true;
-			for (Entry entry : entries) {
-				slots += entry.container()
-					.slots();
-				allLive &= entry.live();
-			}
-			groups.add(new Group(icon, icon.getHoverName(), entries.size(), slots, allLive));
+	/** Groups first (by name), then single containers (largest first). */
+	private List<Row> rows() {
+		Map<String, List<Entry>> groups = new LinkedHashMap<>();
+		List<Row> singles = new ArrayList<>();
+		for (Entry entry : screen.storageEntries()) {
+			String group = StorageGroups.groupOf(entry.container());
+			if (group == null)
+				singles.add(new Row(null, List.of(entry)));
+			else
+				groups.computeIfAbsent(group, g -> new ArrayList<>())
+					.add(entry);
 		}
-		groups.sort(Comparator.comparingLong((Group g) -> -g.slots()));
-		return groups;
+		List<Row> rows = new ArrayList<>();
+		groups.entrySet()
+			.stream()
+			.sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
+			.forEach(e -> rows.add(new Row(e.getKey(), e.getValue())));
+		singles.sort(Comparator.comparingLong((Row r) -> -r.slots()));
+		rows.addAll(singles);
+		return rows;
 	}
 
 	// ---------------------------------------------------------------------------------------------
 	// Drawing
 	// ---------------------------------------------------------------------------------------------
 
-	void render(GuiGraphics graphics, int mouseX, int mouseY) {
+	void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
 		PoseStack ms = graphics.pose();
 		Font font = Minecraft.getInstance().font;
 		ms.pushPose();
 		ms.translate(0, 0, 300); // above the item grid Create has drawn underneath
 		GaugeTab.renderCover(graphics, left(), screen.getGuiTop(), coverTop(), coverBottom());
 
+		renderSummary(graphics, font);
+
+		List<Row> rows = rows();
+		if (rows.isEmpty()) {
+			renderEmptyMessage(graphics, font);
+		} else {
+			scroll = Mth.clamp(scroll, 0, Math.max(0, rows.size() - visibleRows()));
+			graphics.enableScissor(left() + 16, listTop(), left() + 215, coverBottom());
+			int hovered = rowIndexAt(rows, mouseX, mouseY);
+			for (int index = scroll; index < rows.size() && index < scroll + visibleRows(); index++)
+				renderRow(graphics, font, rows.get(index), rowY(index), index == hovered,
+					index == hovered && isOverTag(index, mouseX, mouseY));
+			graphics.disableScissor();
+		}
+
+		if (nameBox != null)
+			nameBox.render(graphics, mouseX, mouseY, partialTicks);
+		ms.popPose();
+	}
+
+	private void renderSummary(GuiGraphics graphics, Font font) {
 		Summary summary = screen.storageSummary();
 		int labelX = rowX() + 2;
 		int barX = rowX() + 40;
@@ -157,35 +293,45 @@ class StorageTab {
 		text(graphics, font, typesLabel, labelX, y + 1, COLOR_TEXT);
 		text(graphics, font, Component.literal(CountFormat.exact(summary.types())), labelX + font.width(typesLabel) + 6,
 			y + 1, COLOR_TEXT);
-
-		List<Group> groups = groups();
-		if (groups.isEmpty()) {
-			renderEmptyMessage(graphics, font);
-		} else {
-			scroll = Mth.clamp(scroll, 0, Math.max(0, groups.size() - visibleRows()));
-			graphics.enableScissor(left() + 16, listTop(), left() + 215, coverBottom());
-			for (int row = 0; row < visibleRows() && scroll + row < groups.size(); row++)
-				renderGroup(graphics, font, groups.get(scroll + row), listTop() + row * ROW_HEIGHT);
-			graphics.disableScissor();
-		}
-		ms.popPose();
 	}
 
-	private void renderGroup(GuiGraphics graphics, Font font, Group group, int y) {
+	private void renderRow(GuiGraphics graphics, Font font, Row row, int y, boolean hovered, boolean tagHovered) {
 		int x = rowX();
+		if (hovered)
+			graphics.fill(x - 1, y, rowRight(), y + ROW_HEIGHT, 0x20FFFFFF);
 		AllGuiTextures.STOCK_KEEPER_REQUEST_SLOT.render(graphics, x, y + 1);
-		graphics.renderItem(group.icon(), x + 1, y + 2);
+		graphics.renderItem(row.icon(), x + 1, y + 2);
 
+		boolean live = row.allLive();
 		int textX = x + 22;
-		String slots = Component.translatable("stockkeeperplus.storage.slot_count", CountFormat.exact(group.slots()))
-			.getString();
-		int slotsX = rowRight() - 2 - font.width(slots);
-		String name = group.name()
-			.getString() + (group.count() > 1 ? " x" + group.count() : "");
-		name = fit(font, name, slotsX - textX - 6);
-		int color = group.allLive() ? COLOR_TEXT : COLOR_STALE;
-		text(graphics, font, Component.literal(name), textX, y + 6, color);
-		graphics.drawString(font, slots, slotsX, y + 6, group.allLive() ? COLOR_DIM : COLOR_STALE, false);
+		int right = tagX() - 4;
+
+		// Right side: how full the row is (when the server tells us), and its size.
+		long used = row.usedSlots();
+		String size = used >= 0 ? CountFormat.exact(used) + "/" + CountFormat.exact(row.slots())
+			: Component.translatable("stockkeeperplus.storage.slot_count", CountFormat.exact(row.slots()))
+				.getString();
+		int sizeX = right - font.width(size);
+		graphics.drawString(font, size, sizeX, y + 6, live ? COLOR_DIM : COLOR_STALE, false);
+		if (used >= 0) {
+			sizeX -= ROW_BAR_WIDTH + 4;
+			FillBar.render(graphics, sizeX, y + 7, ROW_BAR_WIDTH, ROW_BAR_HEIGHT,
+				row.slots() == 0 ? 0 : (double) used / row.slots());
+		}
+
+		String name = row.name()
+			.getString() + (row.entries()
+			.size() > 1 ? " x" + row.entries()
+			.size() : "");
+		if (row != editing) {
+			name = fit(font, name, sizeX - textX - 4);
+			text(graphics, font, Component.literal(name), textX, y + 6, live ? COLOR_TEXT : COLOR_STALE);
+		}
+
+		// Tag button: put this container in a group, or rename the group
+		if (tagHovered)
+			graphics.fill(tagX() - 1, tagY(y) - 1, tagX() + TAG_WIDTH + 1, tagY(y) + TAG_HEIGHT + 1, 0x40FFFFFF);
+		graphics.blit(BUTTONS, tagX(), tagY(y), TAG_U, TAG_V, TAG_WIDTH, TAG_HEIGHT, 64, 64);
 	}
 
 	private void renderEmptyMessage(GuiGraphics graphics, Font font) {
@@ -219,21 +365,77 @@ class StorageTab {
 	}
 
 	// ---------------------------------------------------------------------------------------------
-	// Tooltip and input
+	// Tooltips
 	// ---------------------------------------------------------------------------------------------
 
 	boolean renderTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
-		if (!isOverPanel(mouseX, mouseY))
+		if (!isOverPanel(mouseX, mouseY) || nameBox != null)
 			return false;
-		int row = summaryRowAt(mouseX, mouseY);
-		if (row < 0)
+		Font font = Minecraft.getInstance().font;
+		if (summaryRowAt(mouseX, mouseY) >= 0) {
+			graphics.renderComponentTooltip(font, summaryTooltip(screen.storageSummary()), mouseX, mouseY);
+			return true;
+		}
+		List<Row> rows = rows();
+		int index = rowIndexAt(rows, mouseX, mouseY);
+		if (index < 0)
 			return false;
-		graphics.renderComponentTooltip(Minecraft.getInstance().font, summaryTooltip(screen.storageSummary()),
-			mouseX, mouseY);
+		Row row = rows.get(index);
+		if (isOverTag(index, mouseX, mouseY)) {
+			graphics.renderComponentTooltip(font, List.of(Component.translatable(row.group() != null
+				? "stockkeeperplus.storage.rename_group" : "stockkeeperplus.storage.set_group")), mouseX, mouseY);
+			return true;
+		}
+		graphics.renderComponentTooltip(font, rowTooltip(row), mouseX, mouseY);
 		return true;
 	}
 
-	/** The exact numbers; also used by the bar on the order shelf. */
+	private List<Component> rowTooltip(Row row) {
+		List<Component> lines = new ArrayList<>();
+		lines.add(row.name());
+		if (row.group() != null)
+			lines.add(Component.translatable("stockkeeperplus.storage.tooltip.group_size", row.entries()
+					.size())
+				.withStyle(ChatFormatting.GRAY));
+		long used = row.usedSlots();
+		lines.add(line("stockkeeperplus.storage.tooltip.slots", used >= 0
+			? CountFormat.exact(used) + " / " + CountFormat.exact(row.slots()) + " (" + percent(true,
+				row.slots() == 0 ? 0 : (double) used / row.slots()) + ")"
+			: CountFormat.exact(row.slots())));
+		if (!row.allLive())
+			lines.add(Component.translatable("stockkeeperplus.storage.tooltip.stale", GaugeTab.ago(row.oldestSeen()))
+				.withStyle(ChatFormatting.DARK_GRAY));
+
+		// What is inside: asked from the server while hovering (only if it has the mod).
+		if (ServerLink.available()) {
+			ServerLink.Contents contents = ServerLink.contents(row.positions());
+			if (contents == null) {
+				lines.add(Component.translatable("stockkeeperplus.storage.tooltip.loading")
+					.withStyle(ChatFormatting.DARK_GRAY));
+			} else if (contents.items()
+				.isEmpty()) {
+				lines.add(Component.translatable("stockkeeperplus.storage.tooltip.empty")
+					.withStyle(ChatFormatting.DARK_GRAY));
+			} else {
+				List<ItemCount> items = contents.items();
+				for (int i = 0; i < items.size() && i < MAX_CONTENT_LINES; i++) {
+					ItemCount item = items.get(i);
+					lines.add(Component.literal(CountFormat.exact(item.count()) + " ")
+						.withStyle(ChatFormatting.WHITE)
+						.append(item.item()
+							.getHoverName()
+							.copy()
+							.withStyle(ChatFormatting.GRAY)));
+				}
+				if (items.size() > MAX_CONTENT_LINES)
+					lines.add(Component.translatable("stockkeeperplus.storage.tooltip.more", items.size() - MAX_CONTENT_LINES)
+						.withStyle(ChatFormatting.DARK_GRAY));
+			}
+		}
+		return lines;
+	}
+
+	/** The exact numbers of the whole network; also used by the bar on the order shelf. */
 	static List<Component> summaryTooltip(Summary summary) {
 		List<Component> lines = new ArrayList<>();
 		lines.add(Component.translatable("stockkeeperplus.storage.title"));
@@ -248,9 +450,6 @@ class StorageTab {
 		if (!summary.known())
 			lines.add(Component.translatable("stockkeeperplus.storage.none")
 				.withStyle(ChatFormatting.DARK_GRAY));
-		if (summary.notLoaded() > 0)
-			lines.add(Component.translatable("stockkeeperplus.storage.tooltip.not_loaded", summary.notLoaded())
-				.withStyle(ChatFormatting.DARK_GRAY));
 		return lines;
 	}
 
@@ -260,12 +459,99 @@ class StorageTab {
 			.withStyle(ChatFormatting.GRAY);
 	}
 
+	// ---------------------------------------------------------------------------------------------
+	// Input
+	// ---------------------------------------------------------------------------------------------
+
+	/** Returns true if the click was inside the tab (even if it did nothing). */
+	boolean mouseClicked(double mouseX, double mouseY, int button) {
+		if (nameBox != null) {
+			if (nameBox.isMouseOver(mouseX, mouseY))
+				return nameBox.mouseClicked(mouseX, mouseY, button);
+			commitEdit(); // clicking elsewhere confirms what was typed
+		}
+		if (!isOverPanel(mouseX, mouseY))
+			return false;
+		if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT)
+			return true;
+		List<Row> rows = rows();
+		int index = rowIndexAt(rows, mouseX, mouseY);
+		if (index >= 0 && isOverTag(index, mouseX, mouseY))
+			startEdit(rows.get(index), rowY(index));
+		return true;
+	}
+
 	boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
 		if (!isOverPanel(mouseX, mouseY))
 			return false;
-		scroll -= (int) Math.signum(scrollY);
-		if (scroll < 0)
-			scroll = 0;
+		if (nameBox == null)
+			scroll = Math.max(0, scroll - (int) Math.signum(scrollY));
 		return true;
+	}
+
+	boolean isEditing() {
+		return nameBox != null;
+	}
+
+	private void startEdit(Row row, int rowY) {
+		Font font = Minecraft.getInstance().font;
+		int x = rowX() + 22;
+		nameBox = new EditBox(font, x, rowY + 5, tagX() - 6 - x, 10, Component.empty());
+		nameBox.setMaxLength(40);
+		nameBox.setValue(row.group() != null ? row.group() : "");
+		nameBox.setHint(Component.translatable("stockkeeperplus.storage.group_hint")
+			.withStyle(ChatFormatting.DARK_GRAY));
+		nameBox.setFocused(true);
+		editing = row;
+	}
+
+	private void commitEdit() {
+		if (nameBox == null || editing == null)
+			return;
+		String name = nameBox.getValue();
+		if (editing.group() != null)
+			StorageGroups.renameGroup(editing.group(), name);
+		else
+			StorageGroups.setGroup(editing.first(), name);
+		cancelEdit();
+	}
+
+	private void cancelEdit() {
+		nameBox = null;
+		editing = null;
+	}
+
+	/** Keys go to the name field while it is open: Enter confirms, Esc cancels, Tab completes. */
+	boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		if (nameBox == null)
+			return false;
+		switch (keyCode) {
+			case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> commitEdit();
+			case GLFW.GLFW_KEY_ESCAPE -> cancelEdit();
+			case GLFW.GLFW_KEY_TAB -> complete();
+			default -> nameBox.keyPressed(keyCode, scanCode, modifiers);
+		}
+		return true;
+	}
+
+	boolean charTyped(char codePoint, int modifiers) {
+		if (nameBox == null)
+			return false;
+		nameBox.charTyped(codePoint, modifiers);
+		return true;
+	}
+
+	/** Completes the typed text with the first existing group that starts with it. */
+	private void complete() {
+		if (nameBox == null)
+			return;
+		String typed = nameBox.getValue()
+			.toLowerCase();
+		for (String name : StorageGroups.names())
+			if (name.toLowerCase()
+				.startsWith(typed)) {
+				nameBox.setValue(name);
+				return;
+			}
 	}
 }

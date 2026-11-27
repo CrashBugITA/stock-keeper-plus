@@ -17,8 +17,8 @@ import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelConnection
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelPosition;
 import com.simibubi.create.foundation.gui.AllGuiTextures;
 import com.stockkeeperplus.client.GaugeTracker.Entry;
-import com.stockkeeperplus.client.GaugeTracker.Gauge;
-import com.stockkeeperplus.client.GaugeTracker.Source;
+import com.stockkeeperplus.common.GaugeData.Gauge;
+import com.stockkeeperplus.common.GaugeData.Source;
 
 import net.createmod.catnip.animation.AnimationTickHolder;
 import net.createmod.catnip.theme.Color;
@@ -111,6 +111,7 @@ class GaugeTab {
 	// ---------------------------------------------------------------------------------------------
 
 	void tick() {
+		ServerLink.pollGauges(); // no-op unless the server has the mod
 		if (--ticksUntilUpdate <= 0) {
 			ticksUntilUpdate = UPDATE_INTERVAL_TICKS;
 			refresh();
@@ -677,7 +678,7 @@ class GaugeTab {
 			.withStyle(ChatFormatting.GRAY);
 	}
 
-	private static Component ago(long lastSeen) {
+	static Component ago(long lastSeen) {
 		long minutes = Math.max(0, (System.currentTimeMillis() - lastSeen) / 60_000);
 		if (minutes < 1)
 			return Component.translatable("stockkeeperplus.gauges.time.now");

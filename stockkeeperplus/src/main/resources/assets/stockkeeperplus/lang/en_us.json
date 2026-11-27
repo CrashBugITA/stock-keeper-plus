@@ -49,5 +49,12 @@
   "stockkeeperplus.storage.tooltip.slots": "Slots used: %s",
   "stockkeeperplus.storage.tooltip.items": "Items: %s",
   "stockkeeperplus.storage.tooltip.types": "Different items: %s",
-  "stockkeeperplus.storage.tooltip.not_loaded": "%s of them not loaded: last known size"
+  "stockkeeperplus.storage.set_group": "Put in a group",
+  "stockkeeperplus.storage.rename_group": "Rename group (empty to split it up)",
+  "stockkeeperplus.storage.group_hint": "Group name, Tab to complete",
+  "stockkeeperplus.storage.tooltip.group_size": "%s containers",
+  "stockkeeperplus.storage.tooltip.stale": "Not loaded: size from %s",
+  "stockkeeperplus.storage.tooltip.loading": "Reading contents...",
+  "stockkeeperplus.storage.tooltip.empty": "Empty",
+  "stockkeeperplus.storage.tooltip.more": "and %s more"
 }

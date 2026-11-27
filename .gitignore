@@ -8,6 +8,7 @@ stockkeeperplus/.gradle/
 stockkeeperplus/build/
 stockkeeperplus/libs/
 stockkeeperplus/run/
+stockkeeperplus/run-server/
 *.log
 
 # IDEs

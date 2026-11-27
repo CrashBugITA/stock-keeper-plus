@@ -7,11 +7,12 @@ modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_name}"
 description = '''
-Client-side quality-of-life improvements for the Create Stock Keeper request screen.
-Also applies to Create: Remote Terminal, which reuses the same screen.
+Quality-of-life improvements for the Create Stock Keeper request screen (also in Create: Remote Terminal).
+Works on the client alone; installed on the server too (or in single player) it also shows what is inside
+each container and every gauge of the network.
 '''
 authors = "Stock Keeper Plus contributors"
-# Client-only: the server does not need this mod.
+# Optional on both sides: clients and servers without it can still connect.
 displayTest = "IGNORE_ALL_VERSION"
 
 [[mixins]]
@@ -22,18 +23,18 @@ modId = "neoforge"
 type = "required"
 versionRange = "[21.1.219,)"
 ordering = "NONE"
-side = "CLIENT"
+side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "minecraft"
 type = "required"
 versionRange = "[1.21.1]"
 ordering = "NONE"
-side = "CLIENT"
+side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "create"
 type = "required"
 versionRange = "[6.0.10,6.1)"
 ordering = "AFTER"
-side = "CLIENT"
+side = "BOTH"

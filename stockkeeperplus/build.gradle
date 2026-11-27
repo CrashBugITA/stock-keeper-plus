@@ -33,6 +33,11 @@ neoForge {
             gameDirectory = project.file("run")
             systemProperty("mixin.debug.export", "true")
         }
+        server {
+            server()
+            gameDirectory = project.file("run-server")
+            programArgument("--nogui")
+        }
     }
 }
 
@@ -63,10 +68,16 @@ def setupLibs = tasks.register("setupLibs") {
     description = "Downloads the Create/JEI release jars into libs/ and run/mods/ and extracts Create's bundled libraries."
     def libsDir = file("libs")
     def modsDir = file("run/mods")
+    def serverModsDir = file("run-server/mods")
     outputs.dir(libsDir)
     doLast {
         libsDir.mkdirs()
         modsDir.mkdirs()
+        serverModsDir.mkdirs()
+        // Accept the EULA for the local test server only.
+        def eula = file("run-server/eula.txt")
+        if (!eula.exists()) eula.text = "eula=true" + System.lineSeparator()
+
         releaseJars.each { name, info ->
             def jar = new File(libsDir, name)
             if (!jar.exists() || sha1Of(jar) != info[1]) {
@@ -78,9 +89,11 @@ def setupLibs = tasks.register("setupLibs") {
                 }
             }
             if (info[2]) {
-                def runJar = new File(modsDir, name)
-                if (!runJar.exists() || runJar.length() != jar.length())
-                    java.nio.file.Files.copy(jar.toPath(), runJar.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                [modsDir, serverModsDir].each { dir ->
+                    def runJar = new File(dir, name)
+                    if (!runJar.exists() || runJar.length() != jar.length())
+                        java.nio.file.Files.copy(jar.toPath(), runJar.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                }
             }
         }
         // Ponder, Flywheel and Registrate ship inside the Create jar (jar-in-jar).
@@ -95,7 +108,7 @@ def setupLibs = tasks.register("setupLibs") {
     }
 }
 tasks.named("compileJava") { dependsOn setupLibs }
-tasks.matching { it.name == "runClient" || it.name == "prepareClientRun" }.configureEach { dependsOn setupLibs }
+tasks.matching { it.name in ["runClient", "prepareClientRun", "runServer", "prepareServerRun"] }.configureEach { dependsOn setupLibs }
 
 dependencies {
     // Compile against the exact Create 6.0.10 release jar and the libraries it bundles (see setupLibs).
