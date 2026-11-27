@@ -39,7 +39,7 @@ import net.minecraft.util.Mth;
  * Every panel sits where it is on its wall (one cell per panel, i.e. per half block), drawn with
  * Create's own gauge texture, with its item and its level below it in the colors Create uses on the
  * gauge. Arrows between gauges are drawn like Create's in-world arrows, in the same colors.
- * Separate walls are laid out side by side. Drag to move around, scroll to zoom.
+ * Separate groups of gauges are stacked top to bottom. Drag to move around, scroll to zoom.
  */
 class GaugeTab {
 	private static final ResourceLocation PANEL_TEXTURE =
@@ -58,8 +58,8 @@ class GaugeTab {
 	 */
 	private static final int PITCH_X = 36;
 	private static final int PITCH_Y = 36;
-	/** Space between two separate walls. */
-	private static final int WALL_GAP = 2 * PITCH_X;
+	/** Space between two groups of gauges stacked on the map. */
+	private static final int WALL_GAP = 2 * PITCH_Y;
 	private static final int PAN_MARGIN = 8;
 	/** Zoom steps of the mouse wheel (1 = panels 24 px wide); each texel stays a whole number of pixels. */
 	private static final double[] ZOOM_LEVELS = { 0.25, 0.5, 0.75, 1, 1.5, 2 };
@@ -143,40 +143,107 @@ class GaugeTab {
 		clampPan();
 	}
 
-	/** Places every panel: walls side by side, biggest first, each panel at its spot on its wall. */
+	/** Panels closer than this (in panels, either direction) belong to the same group on a wall. */
+	private static final int CLUSTER_DISTANCE = 4;
+
+	/**
+	 * Places every panel: each group of nearby gauges keeps its shape from the wall, and the groups
+	 * are stacked top to bottom (the Stock Keeper window is tall, not wide). The order only depends
+	 * on where the groups are, so it does not change when more gauges are discovered.
+	 */
 	private void layout() {
 		Map<String, List<Entry>> walls = new LinkedHashMap<>();
 		for (Entry entry : entries)
 			walls.computeIfAbsent(entry.gauge()
 				.plane(), p -> new ArrayList<>())
 				.add(entry);
-		List<List<Entry>> ordered = new ArrayList<>(walls.values());
-		ordered.sort(Comparator.comparingInt((List<Entry> wall) -> -wall.size()));
+
+		List<List<Entry>> clusters = new ArrayList<>();
+		for (List<Entry> wall : walls.values())
+			clusters.addAll(clusters(wall));
+		clusters.sort(Comparator.comparing((List<Entry> c) -> c.get(0)
+				.gauge()
+				.plane())
+			.thenComparingInt(c -> minOf(c, true))
+			.thenComparingInt(c -> minOf(c, false)));
 
 		Map<FactoryPanelPosition, Placed> result = new HashMap<>();
-		int cursorX = 0;
-		int height = 0;
-		for (List<Entry> wall : ordered) {
-			int minColumn = Integer.MAX_VALUE, maxColumn = Integer.MIN_VALUE;
-			int minRow = Integer.MAX_VALUE, maxRow = Integer.MIN_VALUE;
-			for (Entry entry : wall) {
-				Gauge gauge = entry.gauge();
-				minColumn = Math.min(minColumn, gauge.column());
-				maxColumn = Math.max(maxColumn, gauge.column());
-				minRow = Math.min(minRow, gauge.row());
-				maxRow = Math.max(maxRow, gauge.row());
+		int cursorY = 0;
+		int width = 0;
+		for (List<Entry> cluster : clusters) {
+			int minColumn = minOf(cluster, false);
+			int minRow = minOf(cluster, true);
+			int maxColumn = Integer.MIN_VALUE, maxRow = Integer.MIN_VALUE;
+			for (Entry entry : cluster) {
+				maxColumn = Math.max(maxColumn, entry.gauge()
+					.column());
+				maxRow = Math.max(maxRow, entry.gauge()
+					.row());
 			}
-			for (Entry entry : wall) {
+			for (Entry entry : cluster) {
 				Gauge gauge = entry.gauge();
-				result.put(gauge.position(), new Placed(entry, cursorX + (gauge.column() - minColumn) * PITCH_X,
-					(gauge.row() - minRow) * PITCH_Y));
+				result.put(gauge.position(), new Placed(entry, (gauge.column() - minColumn) * PITCH_X,
+					cursorY + (gauge.row() - minRow) * PITCH_Y));
 			}
-			cursorX += (maxColumn - minColumn + 1) * PITCH_X + WALL_GAP;
-			height = Math.max(height, (maxRow - minRow + 1) * PITCH_Y);
+			cursorY += (maxRow - minRow + 1) * PITCH_Y + WALL_GAP;
+			width = Math.max(width, (maxColumn - minColumn + 1) * PITCH_X);
 		}
 		placed = result;
-		contentWidth = Math.max(0, cursorX - WALL_GAP);
-		contentHeight = height;
+		contentWidth = width;
+		contentHeight = Math.max(0, cursorY - WALL_GAP);
+	}
+
+	private static int minOf(List<Entry> cluster, boolean rows) {
+		int min = Integer.MAX_VALUE;
+		for (Entry entry : cluster)
+			min = Math.min(min, rows ? entry.gauge()
+				.row() : entry.gauge()
+				.column());
+		return min;
+	}
+
+	/** Splits the gauges of one wall into groups of panels that are near each other or connected. */
+	private static List<List<Entry>> clusters(List<Entry> wall) {
+		int n = wall.size();
+		int[] parent = new int[n];
+		for (int i = 0; i < n; i++)
+			parent[i] = i;
+		for (int i = 0; i < n; i++) {
+			Gauge a = wall.get(i)
+				.gauge();
+			for (int j = i + 1; j < n; j++) {
+				Gauge b = wall.get(j)
+					.gauge();
+				if (Math.abs(a.column() - b.column()) <= CLUSTER_DISTANCE
+					&& Math.abs(a.row() - b.row()) <= CLUSTER_DISTANCE)
+					parent[find(parent, i)] = find(parent, j);
+			}
+		}
+		// Gauges joined by an arrow stay together however far apart they are, so arrows stay whole.
+		Map<FactoryPanelPosition, Integer> indexOf = new HashMap<>();
+		for (int i = 0; i < n; i++)
+			indexOf.put(wall.get(i)
+				.gauge()
+				.position(), i);
+		for (int i = 0; i < n; i++)
+			for (Source source : wall.get(i)
+				.gauge()
+				.sources()) {
+				Integer j = indexOf.get(source.from());
+				if (j != null)
+					parent[find(parent, i)] = find(parent, j);
+			}
+		Map<Integer, List<Entry>> groups = new LinkedHashMap<>();
+		for (int i = 0; i < n; i++)
+			groups.computeIfAbsent(find(parent, i), r -> new ArrayList<>())
+				.add(wall.get(i));
+		return new ArrayList<>(groups.values());
+	}
+
+	private static int find(int[] parent, int i) {
+		while (parent[i] != i)
+			i = parent[i] = parent[parent[i]];
+		return i;
 	}
 
 	// ---------------------------------------------------------------------------------------------
