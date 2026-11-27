@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
@@ -15,7 +16,6 @@ import com.stockkeeperplus.StockKeeperPlus;
 import com.stockkeeperplus.client.StorageTracker.Entry;
 import com.stockkeeperplus.client.StorageTracker.Summary;
 import com.stockkeeperplus.common.ContainerData;
-import com.stockkeeperplus.network.Payloads.ItemCount;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -29,6 +29,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
+import net.minecraft.world.inventory.tooltip.TooltipComponent;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -46,7 +47,6 @@ class StorageTab {
 	private static final int BAR_HEIGHT = 8;
 	private static final int ROW_BAR_WIDTH = 30;
 	private static final int ROW_BAR_HEIGHT = 5;
-	private static final int MAX_CONTENT_LINES = 12;
 
 	private static final ResourceLocation BUTTONS =
 		ResourceLocation.fromNamespaceAndPath(StockKeeperPlus.MOD_ID, "textures/gui/buttons.png");
@@ -386,7 +386,13 @@ class StorageTab {
 				? "stockkeeperplus.storage.rename_group" : "stockkeeperplus.storage.set_group")), mouseX, mouseY);
 			return true;
 		}
-		graphics.renderComponentTooltip(font, rowTooltip(row), mouseX, mouseY);
+		Optional<TooltipComponent> contents = Optional.empty();
+		List<Component> lines = rowTooltip(row);
+		ServerLink.Contents known = ServerLink.available() ? ServerLink.contents(row.positions()) : null;
+		if (known != null && !known.items()
+			.isEmpty())
+			contents = Optional.of(new ContentsTooltip(known.items()));
+		graphics.renderTooltip(font, lines, contents, mouseX, mouseY);
 		return true;
 	}
 
@@ -419,21 +425,8 @@ class StorageTab {
 				.isEmpty()) {
 				lines.add(Component.translatable("stockkeeperplus.storage.tooltip.empty")
 					.withStyle(ChatFormatting.DARK_GRAY));
-			} else {
-				List<ItemCount> items = contents.items();
-				for (int i = 0; i < items.size() && i < MAX_CONTENT_LINES; i++) {
-					ItemCount item = items.get(i);
-					lines.add(Component.literal(CountFormat.exact(item.count()) + " ")
-						.withStyle(ChatFormatting.WHITE)
-						.append(item.item()
-							.getHoverName()
-							.copy()
-							.withStyle(ChatFormatting.GRAY)));
-				}
-				if (items.size() > MAX_CONTENT_LINES)
-					lines.add(Component.translatable("stockkeeperplus.storage.tooltip.more", items.size() - MAX_CONTENT_LINES)
-						.withStyle(ChatFormatting.DARK_GRAY));
 			}
+			// Otherwise the contents are drawn as a grid of item icons below these lines (ContentsTooltip).
 		}
 		return lines;
 	}
