@@ -56,5 +56,6 @@
   "stockkeeperplus.storage.tooltip.stale": "Not loaded: size from %s",
   "stockkeeperplus.storage.tooltip.loading": "Reading contents...",
   "stockkeeperplus.storage.tooltip.empty": "Empty",
-  "stockkeeperplus.storage.tooltip.no_server_mod": "Contents need this mod on the server"
+  "stockkeeperplus.storage.tooltip.no_server_mod": "Contents need this mod on the server",
+  "stockkeeperplus.storage.tooltip.size": "Size: %s slots"
 }

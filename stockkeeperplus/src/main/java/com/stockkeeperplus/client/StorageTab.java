@@ -404,10 +404,12 @@ class StorageTab {
 					.size())
 				.withStyle(ChatFormatting.GRAY));
 		long used = row.usedSlots();
-		lines.add(line("stockkeeperplus.storage.tooltip.slots", used >= 0
-			? CountFormat.exact(used) + " / " + CountFormat.exact(row.slots()) + " (" + percent(true,
-				row.slots() == 0 ? 0 : (double) used / row.slots()) + ")"
-			: CountFormat.exact(row.slots())));
+		if (used >= 0)
+			lines.add(line("stockkeeperplus.storage.tooltip.slots", CountFormat.exact(used) + " / "
+				+ CountFormat.exact(row.slots()) + " (" + percent(true, row.slots() == 0 ? 0 : (double) used / row.slots())
+				+ ")"));
+		else // without the server part only the size is known
+			lines.add(line("stockkeeperplus.storage.tooltip.size", CountFormat.exact(row.slots())));
 		if (!row.allLive())
 			lines.add(Component.translatable("stockkeeperplus.storage.tooltip.stale", GaugeTab.ago(row.oldestSeen()))
 				.withStyle(ChatFormatting.DARK_GRAY));

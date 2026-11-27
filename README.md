@@ -19,12 +19,14 @@ Either side can have it without the other.
 - Storage: a fill bar on the order shelf, and a Storage tab with one row per container (or per named group),
   contents on hover when the server has the mod.
 
+Languages: English and Italian.
+
 ## Layout
 
 | Path | What |
 |---|---|
 | `stockkeeperplus/` | The mod (Gradle, NeoForge ModDevGradle). See its README to build and run. |
-| `modpack/StockKeeperDev-0.1.0.mrpack` | Modrinth pack with Create, Create: Remote Terminal and JEI for testing. |
+| `modpack/StockKeeperDev-0.2.0.mrpack` | Modrinth pack: Create, Create: Remote Terminal, JEI and this mod. |
 | `PIANO.md` | Implementation plan and status (Italian). |
 
 Not committed, re-creatable locally: `sources/` (clones of Create and Create: Remote Terminal for reference),
