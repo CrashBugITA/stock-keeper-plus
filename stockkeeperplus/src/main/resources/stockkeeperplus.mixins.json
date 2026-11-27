@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.stockkeeperplus.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["StockKeeperRequestScreenAccessor", "StockKeeperRequestScreenMixin", "CategoryEntryAccessor", "StockTickerBlockEntityAccessor"],
+  "injectors": { "defaultRequire": 1 }
+}

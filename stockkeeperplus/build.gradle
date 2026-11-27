@@ -1,0 +1,125 @@
+plugins {
+    id "java-library"
+    id "net.neoforged.moddev" version "2.0.107"
+}
+
+version = mod_version
+group = mod_group_id
+base { archivesName = mod_id }
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    maven { url = "https://maven.blamejared.com" } // JEI
+}
+
+neoForge {
+    version = neo_version
+
+    parchment {
+        minecraftVersion = parchment_minecraft_version
+        mappingsVersion = parchment_version
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+
+    runs {
+        client {
+            client()
+            gameDirectory = project.file("run")
+            systemProperty("mixin.debug.export", "true")
+        }
+    }
+}
+
+// --- Release jars -------------------------------------------------------------------------------
+// The mod compiles against the exact Create release jar (and the libraries bundled inside it), and
+// the dev client runs with the real release jars in run/mods. They are downloaded from Modrinth's
+// CDN and checked against their SHA-1, so a fresh clone builds without anything committed.
+def releaseJars = [
+    // file name : [url, sha1, also needed in run/mods]
+    "create-1.21.1-${create_version}.jar": ["https://cdn.modrinth.com/data/LNytGWDc/versions/UjX6dr61/create-1.21.1-6.0.10.jar", "0e97e49837bed766e6f28a4c95b04885d6acc353", true],
+    "createterminal-1.21.1-1.0.4.jar": ["https://cdn.modrinth.com/data/fxkC0Wyy/versions/oFnfsNlI/createterminal-1.21.1-1.0.4.jar", "3a5fed91e707aae726920065ca75ccb943cb3e16", true],
+    "jei-1.21.1-neoforge-${jei_version}.jar": ["https://cdn.modrinth.com/data/u6dRKJwZ/versions/iv3KiVkE/jei-1.21.1-neoforge-19.64.0.455.jar", "f6d6fc08d54c40752926b570a2220471e8c45c1a", true],
+    "mezz_config-1.21.1-neoforge-0.7.1-standalone.jar": ["https://cdn.modrinth.com/data/7tEfOcA7/versions/V6oWFnxW/mezz_config-1.21.1-neoforge-0.7.1-standalone.jar", "2382e29c9a0f44d4f4b9baa4cb3f6a356e048e60", true],
+]
+
+def sha1Of(File f) {
+    def digest = java.security.MessageDigest.getInstance("SHA-1")
+    f.withInputStream { input ->
+        byte[] buffer = new byte[65536]
+        int read
+        while ((read = input.read(buffer)) > 0) digest.update(buffer, 0, read)
+    }
+    return digest.digest().encodeHex().toString()
+}
+
+def setupLibs = tasks.register("setupLibs") {
+    group = "setup"
+    description = "Downloads the Create/JEI release jars into libs/ and run/mods/ and extracts Create's bundled libraries."
+    def libsDir = file("libs")
+    def modsDir = file("run/mods")
+    outputs.dir(libsDir)
+    doLast {
+        libsDir.mkdirs()
+        modsDir.mkdirs()
+        releaseJars.each { name, info ->
+            def jar = new File(libsDir, name)
+            if (!jar.exists() || sha1Of(jar) != info[1]) {
+                logger.lifecycle("Downloading ${name}")
+                new URI(info[0]).toURL().withInputStream { input -> jar.withOutputStream { it << input } }
+                if (sha1Of(jar) != info[1]) {
+                    jar.delete()
+                    throw new GradleException("SHA-1 mismatch for ${name}")
+                }
+            }
+            if (info[2]) {
+                def runJar = new File(modsDir, name)
+                if (!runJar.exists() || runJar.length() != jar.length())
+                    java.nio.file.Files.copy(jar.toPath(), runJar.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+        // Ponder, Flywheel and Registrate ship inside the Create jar (jar-in-jar).
+        copy {
+            from(zipTree(new File(libsDir, "create-1.21.1-${create_version}.jar"))) {
+                include "META-INF/jarjar/*.jar"
+                eachFile { it.path = it.name }
+            }
+            into libsDir
+            includeEmptyDirs = false
+        }
+    }
+}
+tasks.named("compileJava") { dependsOn setupLibs }
+tasks.matching { it.name == "runClient" || it.name == "prepareClientRun" }.configureEach { dependsOn setupLibs }
+
+dependencies {
+    // Compile against the exact Create 6.0.10 release jar and the libraries it bundles (see setupLibs).
+    compileOnly(files(
+        "libs/create-1.21.1-${create_version}.jar",
+        "libs/ponder-neoforge-1.0.82+mc1.21.1.jar",
+        "libs/flywheel-neoforge-1.21.1-1.0.6.jar",
+        "libs/Registrate-MC1.21-1.3.0+67.jar"
+    ))
+    compileOnly("mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}")
+}
+
+var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+    var replaceProperties = [
+        minecraft_version: minecraft_version, neo_version: neo_version,
+        mod_id: mod_id, mod_name: mod_name, mod_version: mod_version, mod_license: mod_license,
+        create_version: create_version
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from "src/main/templates"
+    into "build/generated/sources/modMetadata"
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+tasks.withType(JavaCompile).configureEach { options.encoding = "UTF-8" }

@@ -1,0 +1,39 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "${mod_license}"
+
+[[mods]]
+modId = "${mod_id}"
+version = "${mod_version}"
+displayName = "${mod_name}"
+description = '''
+Client-side quality-of-life improvements for the Create Stock Keeper request screen.
+Also applies to Create: Remote Terminal, which reuses the same screen.
+'''
+authors = "Stock Keeper Plus contributors"
+# Client-only: the server does not need this mod.
+displayTest = "IGNORE_ALL_VERSION"
+
+[[mixins]]
+config = "${mod_id}.mixins.json"
+
+[[dependencies.${mod_id}]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.219,)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.${mod_id}]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1]"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.${mod_id}]]
+modId = "create"
+type = "required"
+versionRange = "[6.0.10,6.1)"
+ordering = "AFTER"
+side = "CLIENT"
