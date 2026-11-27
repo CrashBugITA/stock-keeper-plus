@@ -43,12 +43,11 @@
   "stockkeeperplus.storage.title": "Network storage",
   "stockkeeperplus.storage.slots": "Slots",
   "stockkeeperplus.storage.items": "Items",
-  "stockkeeperplus.storage.types": "Types",
+  "stockkeeperplus.storage.types": "Different items",
   "stockkeeperplus.storage.slot_count": "%s slots",
   "stockkeeperplus.storage.none": "No containers found yet. Containers near you are read live; others keep the size they had when you last saw them.",
   "stockkeeperplus.storage.tooltip.slots": "Slots used: %s",
   "stockkeeperplus.storage.tooltip.items": "Items: %s",
   "stockkeeperplus.storage.tooltip.types": "Different items: %s",
-  "stockkeeperplus.storage.tooltip.containers": "Estimated from the stock and %s known containers",
   "stockkeeperplus.storage.tooltip.not_loaded": "%s of them not loaded: last known size"
 }

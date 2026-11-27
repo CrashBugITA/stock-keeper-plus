@@ -153,8 +153,10 @@ class StorageTab {
 			barX + barWidth + 4, y + 1, COLOR_TEXT);
 
 		y += SUMMARY_ROW;
-		text(graphics, font, Component.translatable("stockkeeperplus.storage.types"), labelX, y + 1, COLOR_TEXT);
-		text(graphics, font, Component.literal(CountFormat.exact(summary.types())), barX, y + 1, COLOR_TEXT);
+		Component typesLabel = Component.translatable("stockkeeperplus.storage.types");
+		text(graphics, font, typesLabel, labelX, y + 1, COLOR_TEXT);
+		text(graphics, font, Component.literal(CountFormat.exact(summary.types())), labelX + font.width(typesLabel) + 6,
+			y + 1, COLOR_TEXT);
 
 		List<Group> groups = groups();
 		if (groups.isEmpty()) {
@@ -243,10 +245,7 @@ class StorageTab {
 				+ percent(true, summary.itemFill()) + ")"));
 		}
 		lines.add(line("stockkeeperplus.storage.tooltip.types", CountFormat.exact(summary.types())));
-		if (summary.known())
-			lines.add(Component.translatable("stockkeeperplus.storage.tooltip.containers", summary.containers())
-				.withStyle(ChatFormatting.DARK_GRAY));
-		else
+		if (!summary.known())
 			lines.add(Component.translatable("stockkeeperplus.storage.none")
 				.withStyle(ChatFormatting.DARK_GRAY));
 		if (summary.notLoaded() > 0)
