@@ -1,9 +1,11 @@
 # Stock Keeper Plus
 
-Client-side improvements for the Create 6.0.10 Stock Keeper request screen (NeoForge 1.21.1).
+Improvements for the Create 6.0.10 Stock Keeper request screen (NeoForge 1.21.1).
 Create: Remote Terminal opens the same screen, so it gets the improvements too.
+See the [main README](../README.md) for the features.
 
-The server does not need this mod.
+The mod works on the client alone. On the server it is optional: there it answers the client's requests
+for gauges, containers and container contents (`server/`, payloads in `network/`).
 
 ## Build
 
@@ -18,10 +20,11 @@ Create 6.0.10, Create: Remote Terminal, JEI and MezzConfig. Create's jar goes to
 libraries bundled inside it (Ponder, Flywheel, Registrate) to compile against; all of them are also copied
 to `run/mods/` for the dev client.
 
-## Dev client
+## Dev client and server
 
 ```
 ./gradlew runClient
+./gradlew runServer
 ```
 
 ## How it works
