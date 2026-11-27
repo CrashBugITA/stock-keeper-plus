@@ -30,7 +30,7 @@
   "stockkeeperplus.gauges.tooltip.address": "Recipe address: %s",
   "stockkeeperplus.gauges.tooltip.waiting": "Waiting for the network",
   "stockkeeperplus.gauges.tooltip.paused": "Paused by redstone",
-  "stockkeeperplus.gauges.tooltip.restocker": "Restocker (counts its packager's inventory)",
+  "stockkeeperplus.gauges.tooltip.restocker": "Restocker",
   "stockkeeperplus.gauges.tooltip.stale": "Not loaded: values from %s",
   "stockkeeperplus.gauges.time.now": "just now",
   "stockkeeperplus.gauges.time.minutes": "%s min ago",
