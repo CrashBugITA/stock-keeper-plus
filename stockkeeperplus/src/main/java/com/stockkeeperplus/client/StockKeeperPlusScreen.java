@@ -52,7 +52,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 				.add(FAVORITES_CATEGORY);
 		restoreCart();
 		gaugeTab = new GaugeTab(this);
-		gaugeMode = lastTabWasGauges;
+		storageTab = new StorageTab(this);
+		tab = lastTab;
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -90,9 +91,10 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		super.init();
 		layoutSearchBox();
 		// Keep JEI's side panels away from the tabs.
-		getExtraAreas().add(new Rect2i(tabX(), tabY(0), TAB_WIDTH, TAB_SPACING + TAB_HEIGHT));
-		if (gaugeMode)
+		getExtraAreas().add(new Rect2i(tabX(), tabY(0), TAB_WIDTH, (TAB_COUNT - 1) * TAB_SPACING + TAB_HEIGHT));
+		if (tab == TAB_GAUGES)
 			gaugeTab.refreshNow();
+		refreshStorage();
 		StockKeeperPlus.LOGGER.debug("Stock Keeper Plus screen initialised for ticker at {}",
 			menu.contentHolder.getBlockPos());
 	}
@@ -124,12 +126,15 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		super.containerTick();
 		if (displayedItems != lastProcessedItems)
 			postProcessList();
-		if (gaugeMode) {
-			// The search row scrolls with Create's item list; keep it in place under the gauge tab.
+		if (tab != TAB_STOCK) {
+			// The search row scrolls with Create's item list; keep it in place under the other tabs.
 			if (itemScroll.getChaseTarget() != 0)
 				itemScroll.startWithValue(0);
-			gaugeTab.tick();
 		}
+		if (tab == TAB_GAUGES)
+			gaugeTab.tick();
+		if (--ticksUntilStorageUpdate <= 0)
+			refreshStorage();
 	}
 
 	/** Asks Create to rebuild the list now (e.g. after a sort or favorite change), then post-processes it. */
@@ -238,7 +243,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		Favorites.setCollapsed(hidden.remove(FAVORITES_CATEGORY), registries());
 		saveCart();
 		GaugeTracker.save(registries());
-		lastTabWasGauges = gaugeMode;
+		StorageTracker.save();
+		lastTab = tab;
 		super.removed();
 	}
 
@@ -354,7 +360,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 			renderShortSearchBarEnd(graphics, x, y);
 		renderFavoriteStars(graphics, scroll);
 
-		if (!gaugeMode) { // sorting only applies to the item list
+		if (tab == TAB_STOCK) { // sorting only applies to the item list
 			int u = ClientConfig.sortMode()
 				.ordinal() * 16;
 			graphics.blit(BUTTONS, sortButtonX(), sortButtonY(), u, 0, BUTTON_WIDTH, BUTTON_HEIGHT,
@@ -420,8 +426,14 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		}
 		if (renderTabTooltip(graphics, mouseX, mouseY))
 			return;
-		if (gaugeMode) {
+		if (renderShelfBarTooltip(graphics, mouseX, mouseY))
+			return;
+		if (tab == TAB_GAUGES) {
 			gaugeTab.renderTooltip(graphics, mouseX, mouseY);
+			return;
+		}
+		if (tab == TAB_STORAGE) {
+			storageTab.renderTooltip(graphics, mouseX, mouseY);
 			return;
 		}
 		renderCategoryButtonTooltip(graphics, mouseX, mouseY, partialTicks);
@@ -568,8 +580,11 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		float scroll = itemScroll.getValue(partialTicks);
 		renderCategoryButtons(graphics, mouseX, mouseY, scroll);
 		renderSearchRow(graphics, scroll);
-		if (gaugeMode)
+		renderShelfBar(graphics);
+		if (tab == TAB_GAUGES)
 			gaugeTab.render(graphics, mouseX, mouseY);
+		else if (tab == TAB_STORAGE)
+			storageTab.render(graphics, mouseX, mouseY);
 	}
 
 	/**
@@ -647,11 +662,16 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
 		if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && clickTab(mouseX, mouseY))
 			return true;
-		if (gaugeMode) {
+		if (tab == TAB_GAUGES) {
 			if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && gaugeTab.mouseClicked(mouseX, mouseY))
 				return true;
 			if (gaugeTab.isOverPanel(mouseX, mouseY))
 				return true; // nothing of the hidden item grid may react
+			return super.mouseClicked(mouseX, mouseY, button);
+		}
+		if (tab == TAB_STORAGE) {
+			if (storageTab.isOverPanel(mouseX, mouseY))
+				return true;
 			return super.mouseClicked(mouseX, mouseY, button);
 		}
 		if (clickSortButton(mouseX, mouseY, button))
@@ -684,11 +704,18 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	}
 
 	// ---------------------------------------------------------------------------------------------
-	// Side tabs: Stock | Factory Gauges
+	// Side tabs: Stock | Factory Gauges | Storage
 	// ---------------------------------------------------------------------------------------------
-	// Two pixel-art tabs sticking out of the window's left edge, below the title banner. The window is
+	// Pixel-art tabs sticking out of the window's left edge, below the title banner. The window is
 	// drawn over their right end, so they look attached to it. The last used tab is remembered while
 	// the game runs.
+
+	private static final int TAB_STOCK = 0;
+	private static final int TAB_GAUGES = 1;
+	private static final int TAB_STORAGE = 2;
+	private static final int TAB_COUNT = 3;
+	private static final String[] TAB_NAMES = { "stockkeeperplus.tab.stock", "stockkeeperplus.tab.gauges",
+		"stockkeeperplus.tab.storage" };
 
 	private static final int TAB_WIDTH = 24;
 	private static final int TAB_HEIGHT = 22;
@@ -697,10 +724,11 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	private static final int TAB_INACTIVE_U = 0;
 	private static final int TAB_ACTIVE_U = 24;
 
-	private static boolean lastTabWasGauges;
+	private static int lastTab = TAB_STOCK;
 
 	private final GaugeTab gaugeTab;
-	private boolean gaugeMode;
+	private final StorageTab storageTab;
+	private int tab;
 
 	private int tabX() {
 		return getGuiLeft() - 14;
@@ -710,64 +738,127 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		return getGuiTop() + 22 + index * TAB_SPACING;
 	}
 
-	/** 0 = Stock, 1 = Factory Gauges, -1 = none. */
+	private static ItemStack tabIcon(int index) {
+		return switch (index) {
+			case TAB_GAUGES -> AllBlocks.FACTORY_GAUGE.asStack();
+			case TAB_STORAGE -> AllBlocks.ITEM_VAULT.asStack();
+			default -> AllBlocks.STOCK_TICKER.asStack();
+		};
+	}
+
+	/** Index of the tab under the mouse, or -1. */
 	private int tabAt(double mouseX, double mouseY) {
 		// The rightmost column is hidden under the window's edge.
 		if (mouseX < tabX() || mouseX >= tabX() + TAB_WIDTH - 1)
 			return -1;
-		for (int i = 0; i < 2; i++)
+		for (int i = 0; i < TAB_COUNT; i++)
 			if (mouseY >= tabY(i) && mouseY < tabY(i) + TAB_HEIGHT)
 				return i;
 		return -1;
 	}
 
 	private void renderTabs(GuiGraphics graphics) {
-		for (int i = 0; i < 2; i++) {
-			boolean active = (i == 1) == gaugeMode;
-			graphics.blit(BUTTONS, tabX(), tabY(i), active ? TAB_ACTIVE_U : TAB_INACTIVE_U, TAB_V, TAB_WIDTH, TAB_HEIGHT,
+		for (int i = 0; i < TAB_COUNT; i++) {
+			graphics.blit(BUTTONS, tabX(), tabY(i), i == tab ? TAB_ACTIVE_U : TAB_INACTIVE_U, TAB_V, TAB_WIDTH, TAB_HEIGHT,
 				BUTTONS_TEXTURE_WIDTH, BUTTONS_TEXTURE_HEIGHT);
-			graphics.renderItem(i == 0 ? AllBlocks.ITEM_VAULT.asStack() : AllBlocks.FACTORY_GAUGE.asStack(), tabX() + 4,
-				tabY(i) + 3);
+			graphics.renderItem(tabIcon(i), tabX() + 4, tabY(i) + 3);
 		}
 	}
 
 	private boolean renderTabTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
-		int tab = tabAt(mouseX, mouseY);
-		if (tab < 0)
+		int hovered = tabAt(mouseX, mouseY);
+		if (hovered < 0)
 			return false;
-		graphics.renderComponentTooltip(font, List.of(Component.translatable(
-			tab == 0 ? "stockkeeperplus.tab.stock" : "stockkeeperplus.tab.gauges")), mouseX, mouseY);
+		graphics.renderComponentTooltip(font, List.of(Component.translatable(TAB_NAMES[hovered])), mouseX, mouseY);
 		return true;
 	}
 
 	private boolean clickTab(double mouseX, double mouseY) {
-		int tab = tabAt(mouseX, mouseY);
-		if (tab < 0)
+		int clicked = tabAt(mouseX, mouseY);
+		if (clicked < 0)
 			return false;
-		setGaugeMode(tab == 1);
+		setTab(clicked);
 		return true;
 	}
 
-	private void setGaugeMode(boolean gauges) {
-		if (gaugeMode == gauges)
+	private void setTab(int newTab) {
+		if (tab == newTab)
 			return;
-		gaugeMode = gauges;
-		if (gauges) {
+		tab = newTab;
+		if (tab != TAB_STOCK)
 			itemScroll.startWithValue(0);
+		if (tab == TAB_GAUGES)
 			gaugeTab.refreshNow();
-		}
+		if (tab == TAB_STORAGE)
+			refreshStorage();
 		playUiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1, 1);
 	}
 
 	@Override
 	public boolean stockkeeperplus$coversItemGrid() {
-		return gaugeMode;
+		return tab != TAB_STOCK;
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// Storage fill level: bar on the order shelf, and the Storage tab
+	// ---------------------------------------------------------------------------------------------
+	// The bar is cut into the lip of the shelf below the order slots (rows 109..113 of Create's
+	// footer texture, columns 42..211), so it looks like part of the furniture.
+
+	private static final int STORAGE_UPDATE_TICKS = 20;
+	private static final int SHELF_BAR_TEX_X = 42;
+	private static final int SHELF_BAR_TEX_ROW = 109;
+	private static final int SHELF_BAR_WIDTH = 170;
+	private static final int SHELF_BAR_HEIGHT = 5;
+	private static final int FOOTER_TEX_V = 80; // Create's footer starts at row 80 of stock_keeper.png
+
+	private List<StorageTracker.Entry> storageEntries = List.of();
+	private StorageTracker.Summary storageSummary = StorageTracker.summarize(null, List.of());
+	private int ticksUntilStorageUpdate;
+
+	private void refreshStorage() {
+		ticksUntilStorageUpdate = STORAGE_UPDATE_TICKS;
+		UUID network = tickerNetwork();
+		storageEntries = network == null ? List.of() : StorageTracker.update(network);
+		storageSummary = StorageTracker.summarize(menu.contentHolder.getLastClientsideStockSnapshotAsSummary(),
+			storageEntries);
+	}
+
+	List<StorageTracker.Entry> storageEntries() {
+		return storageEntries;
+	}
+
+	StorageTracker.Summary storageSummary() {
+		return storageSummary;
+	}
+
+	private int shelfBarX() {
+		return getGuiLeft() - 15 + SHELF_BAR_TEX_X; // the footer is drawn at guiLeft - 15
+	}
+
+	private int shelfBarY() {
+		int footerTop = getGuiTop() + imageHeight - 80;
+		return footerTop + SHELF_BAR_TEX_ROW - FOOTER_TEX_V;
+	}
+
+	private void renderShelfBar(GuiGraphics graphics) {
+		FillBar.render(graphics, shelfBarX(), shelfBarY(), SHELF_BAR_WIDTH, SHELF_BAR_HEIGHT, storageSummary.slotFill());
+	}
+
+	private boolean renderShelfBarTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+		if (mouseX < shelfBarX() || mouseX >= shelfBarX() + SHELF_BAR_WIDTH || mouseY < shelfBarY() - 1
+			|| mouseY >= shelfBarY() + SHELF_BAR_HEIGHT + 1)
+			return false;
+		graphics.renderComponentTooltip(font, StorageTab.summaryTooltip(storageSummary), mouseX, mouseY);
+		return true;
 	}
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-		if (gaugeMode) {
-			if (gaugeTab.mouseScrolled(mouseX, mouseY, scrollY))
+		if (tab == TAB_STORAGE && storageTab.mouseScrolled(mouseX, mouseY, scrollY))
+			return true;
+		if (tab != TAB_STOCK) {
+			if (tab == TAB_GAUGES && gaugeTab.mouseScrolled(mouseX, mouseY, scrollY))
 				return true;
 			// Outside the gauge list only the order row and the address box react to the wheel.
 			Couple<Integer> hovered = accessor().stockkeeperplus$getHoveredSlot((int) mouseX, (int) mouseY);
@@ -798,7 +889,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 
 	@Override
 	public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-		if (gaugeMode && button == GLFW.GLFW_MOUSE_BUTTON_LEFT && gaugeTab.mouseDragged(mouseX, mouseY))
+		if (tab == TAB_GAUGES && button == GLFW.GLFW_MOUSE_BUTTON_LEFT && gaugeTab.mouseDragged(mouseX, mouseY))
 			return true;
 		return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
 	}

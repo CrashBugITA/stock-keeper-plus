@@ -298,16 +298,9 @@ class GaugeTab {
 		int x = left();
 		int y = top();
 
-		graphics.enableScissor(x - 15, coverTop(), x + 241, coverBottom());
 		ms.pushPose();
 		ms.translate(0, 0, 300); // above the item grid Create has drawn underneath
-
-		// Cover the item grid with the same background Create draws there.
-		for (int bodyY = y + 36; bodyY < coverBottom(); bodyY += AllGuiTextures.STOCK_KEEPER_REQUEST_BODY.getHeight())
-			AllGuiTextures.STOCK_KEEPER_REQUEST_BODY.render(graphics, x - 15, bodyY);
-		for (int sliceY = y + 16; sliceY < coverBottom(); sliceY += AllGuiTextures.STOCK_KEEPER_REQUEST_BG.getHeight())
-			AllGuiTextures.STOCK_KEEPER_REQUEST_BG.render(graphics, x + 22, sliceY);
-		graphics.disableScissor();
+		renderCover(graphics, x, y, coverTop(), coverBottom());
 
 		if (placed.isEmpty()) {
 			renderEmptyMessage(graphics, font);
@@ -334,6 +327,19 @@ class GaugeTab {
 
 		graphics.disableScissor();
 		ms.popPose();
+	}
+
+	/**
+	 * Covers Create's item grid (below the search row) with the same background Create draws there.
+	 * Shared by the tabs that replace the item list.
+	 */
+	static void renderCover(GuiGraphics graphics, int guiLeft, int guiTop, int coverTop, int coverBottom) {
+		graphics.enableScissor(guiLeft - 15, coverTop, guiLeft + 241, coverBottom);
+		for (int bodyY = guiTop + 36; bodyY < coverBottom; bodyY += AllGuiTextures.STOCK_KEEPER_REQUEST_BODY.getHeight())
+			AllGuiTextures.STOCK_KEEPER_REQUEST_BODY.render(graphics, guiLeft - 15, bodyY);
+		for (int sliceY = guiTop + 16; sliceY < coverBottom; sliceY += AllGuiTextures.STOCK_KEEPER_REQUEST_BG.getHeight())
+			AllGuiTextures.STOCK_KEEPER_REQUEST_BG.render(graphics, guiLeft + 22, sliceY);
+		graphics.disableScissor();
 	}
 
 	private static boolean matches(Gauge gauge, String search) {
