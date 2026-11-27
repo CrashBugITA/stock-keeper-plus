@@ -97,14 +97,6 @@ cd stockkeeperplus
 
 The jar ends up in `stockkeeperplus/build/libs/`.
 
-## Repository layout
-
-| Path | What |
-|---|---|
-| `stockkeeperplus/` | The mod (Gradle, NeoForge ModDevGradle) |
-| `modpack/` | Modrinth pack for testing: Create, Create: Remote Terminal, JEI and this mod |
-| `PIANO.md` | Implementation plan and status (Italian) |
-
 ## License
 
 MIT, see [LICENSE](LICENSE). Parts of the code follow Create's own code (MIT, Copyright simibubi and

@@ -1,7 +1,6 @@
 # Local reference copies, not part of the project (see README)
 /sources/
 /mods/
-/modpack/build/
 
 # Mod build output, downloaded jars and the dev game folder
 stockkeeperplus/.gradle/
@@ -16,3 +15,7 @@ stockkeeperplus/run-server/
 .vscode/
 *.iml
 out/
+
+# Local testing only
+/modpack/
+/PIANO.md
