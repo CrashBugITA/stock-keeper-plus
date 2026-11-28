@@ -176,7 +176,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		}
 		if (tab == TAB_GAUGES)
 			gaugeTab.tick();
-		if (tab == TAB_STORAGE)
+		// The storage bar shows on every tab, so it reads the same server data as the Storage tab.
+		if (tab == TAB_STORAGE || ClientConfig.storageBar())
 			ServerLink.pollStorage(); // no-op unless the server has the mod
 		if (--ticksUntilStorageUpdate <= 0)
 			refreshStorage();
