@@ -22,6 +22,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   so the storage bar and the totals jumped around and could pass 100%.
 - The storage bar under the order now uses the server's data on every tab, like the Storage tab, instead of
   only what the client has loaded.
+- The Factory Gauges and Storage tabs no longer draw the item grid under their cover, so item decorations
+  from other mods (such as Relics' upgrade icons) no longer show through.
 
 ## [0.2.0] - 2026-11-27
 

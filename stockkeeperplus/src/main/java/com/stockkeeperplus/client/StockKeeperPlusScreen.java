@@ -617,14 +617,22 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	protected void renderBg(GuiGraphics graphics, float partialTicks, int mouseX, int mouseY) {
 		if (this == minecraft.screen)
 			renderTabs(graphics); // behind the window, so its left edge overlaps the tabs
-		if (tab != TAB_STOCK && !recipesToOrder.isEmpty()) {
-			// Create would draw the recipe row under the cover; it is drawn once, on top, below.
+		if (tab != TAB_STOCK) {
+			// The other tabs cover the item grid, so Create must not draw it: item decorations from
+			// other mods (drawn far in front) would show through the cover. The recipe row is drawn
+			// once, on top, below. Same number of categories, all empty, so Create's loops stay valid.
 			List<CraftableBigItemStack> recipes = recipesToOrder;
+			List<List<BigItemStack>> items = displayedItems;
+			List<List<BigItemStack>> empty = new ArrayList<>(items.size());
+			for (int i = 0; i < items.size(); i++)
+				empty.add(new ArrayList<>());
 			recipesToOrder = new ArrayList<>();
+			displayedItems = empty;
 			try {
 				super.renderBg(graphics, partialTicks, mouseX, mouseY);
 			} finally {
 				recipesToOrder = recipes;
+				displayedItems = items;
 			}
 		} else
 			super.renderBg(graphics, partialTicks, mouseX, mouseY);
