@@ -4,6 +4,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.simibubi.create.content.logistics.packager.PackagerBlockEntity;
 import com.simibubi.create.content.logistics.vault.ItemVaultBlockEntity;
+import com.stockkeeperplus.mixin.ItemVaultBlockEntityAccessor;
 
 import net.createmod.catnip.math.BlockFace;
 import net.minecraft.core.BlockPos;
@@ -15,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
  * One container of a logistics network: the inventory a Packager of the network reads from.
@@ -95,11 +97,23 @@ public record ContainerData(String dimension, BlockPos pos, ResourceLocation blo
 				.isEmpty())
 				used++;
 		}
+		int slots = handler.getSlots();
+		// A vault builds its inventory once, from the blocks loaded at that moment: when part of it
+		// was in an unloaded chunk, the inventory comes out too small. Size it from its shape instead.
+		if (level.getBlockEntity(face.getPos()) instanceof ItemVaultBlockEntity part
+			&& part.getControllerBE() instanceof ItemVaultBlockEntity controller) {
+			ItemStackHandler inventory = ((ItemVaultBlockEntityAccessor) controller).stockkeeperplus$getInventory();
+			if (inventory != null && inventory.getSlots() > 0) {
+				slots = controller.getWidth() * controller.getWidth() * controller.getHeight() * inventory.getSlots();
+				capacity = (long) slots * Math.min(STACK, inventory.getSlotLimit(0));
+			}
+		}
+
 		ResourceLocation block = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos)
 			.getBlock());
 		return new ContainerData(level.dimension()
 			.location()
-			.toString(), pos.immutable(), block, handler.getSlots(), capacity, used, now);
+			.toString(), pos.immutable(), block, slots, capacity, used, now);
 	}
 
 	/** A vault is one container however many of its blocks have a packager: use its controller. */

@@ -17,6 +17,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Storage tab: each row shows the container name on its own line, with the fill bar and slot count below it,
   so long names are no longer cut short.
 
+### Fixed
+- An Item Vault that was only partly loaded when first read could be counted with fewer slots than it has,
+  so the storage bar and the totals jumped around and could pass 100%.
+
 ## [0.2.0] - 2026-11-27
 
 First public release, for Minecraft 1.21.1, NeoForge 21.1.219+ and Create 6.0.10.
