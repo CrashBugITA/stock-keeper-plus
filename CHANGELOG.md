@@ -5,7 +5,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- The search text is kept when the screen closes, separately for every Stock Ticker, like the order.
+- Config options (Mods list > Stock Keeper Plus > Config, or `config/stockkeeperplus-client.toml`):
+  remember the order, remember the search, favorites, exact counts in tooltips, numpad Enter, the Factory Gauges
+  and Storage tabs, the storage bar and the gauge map animations.
+- The config screen is translated, and the sort order shows its name instead of its internal id.
+
 ### Changed
+- `Esc` no longer clears the search first: it closes the screen right away, as in Create.
 - Storage tab: each row shows the container name on its own line, with the fill bar and slot count below it,
   so long names are no longer cut short.
 

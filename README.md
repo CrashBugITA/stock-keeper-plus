@@ -35,6 +35,7 @@ The mod is optional on both sides: a client with it can join a server without it
   and a small star on their slot.
 - **Saved order** – the items in the order (cart) are kept when you close the screen, separately for every
   Stock Ticker. They are still there next time you open it.
+- **Saved search** – the search text is kept too, so the list opens filtered the way you left it.
 - **Exact counts** – item tooltips show the exact amount in stock and in the order, with stacks the way
   Create writes them on clipboards: `12,345 | 192▤ +57`.
 - **Collapse / expand all** – two buttons close or open every category at once.
@@ -69,7 +70,6 @@ A thin bar under the order slots shows how full the network's storage is, on eve
 | Key | Action |
 |---|---|
 | `Ctrl` + `F` | Focus the search box |
-| `Esc` | Clear the search (a second `Esc` closes the screen) |
 | `Ctrl` + `Delete` | Clear the order |
 | Numpad `Enter` | Send the order (same as Create's `Shift` + `Enter`) |
 | `Alt` + click | Add or remove a favorite |
@@ -82,10 +82,24 @@ The recipe row that JEI's `+` button adds above the order works on every tab.
 
 ## Configuration
 
-The sort order is saved in `config/stockkeeperplus-client.toml` and can also be changed from the Mods
-list. Saved orders, favorites, groups and the remembered gauges and containers are stored per world in
-`config/stockkeeperplus/`.
+Open it from the Mods list (Stock Keeper Plus > Config) or edit `config/stockkeeperplus-client.toml`.
+Changes apply right away.
 
+| Option | Default | What it does |
+|---|---|---|
+| Sort order | Quantity, high to low | Order of the items in each category (also the sort button) |
+| Remember the order | On | Keep the order when the screen closes, per Stock Ticker |
+| Remember the search | On | Keep the search text when the screen closes, per Stock Ticker |
+| Favorites | On | `Alt` + click favorites and the Favorites category |
+| Exact counts | On | Amounts in stock and in the order in item tooltips |
+| Numpad Enter sends | On | Numpad `Enter` sends the order |
+| Factory Gauges tab | On | Show the gauge map tab |
+| Storage tab | On | Show the containers tab |
+| Storage bar | On | Show the fill bar under the order slots |
+| Animations | On | Request flashes and moving arrows on the gauge map |
+
+Saved orders, searches, favorites, groups and the remembered gauges and containers are stored per world in
+`config/stockkeeperplus/`.
 ## Building
 
 See [stockkeeperplus/README.md](stockkeeperplus/README.md).

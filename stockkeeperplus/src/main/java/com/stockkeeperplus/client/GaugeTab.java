@@ -518,7 +518,8 @@ class GaugeTab {
 		boolean missingAddress = panel != null ? panel.isMissingAddress() : gauge.address()
 			.isBlank();
 		// Same rule as Create's arrows: they flow while the gauge is still asking for its ingredients.
-		boolean flowing = !missingAddress && !waiting && !satisfied && !redstone;
+		boolean animate = ClientConfig.gaugeAnimations();
+		boolean flowing = animate && !missingAddress && !waiting && !satisfied && !redstone;
 		int startX = target.x() + PANEL_SIZE / 2;
 		int startY = target.y() + PANEL_SIZE / 2;
 
@@ -528,7 +529,7 @@ class GaugeTab {
 				continue;
 
 			int color = baseColor;
-			if (!redstone && !waiting && glow > 0 && !satisfied) {
+			if (animate && !redstone && !waiting && glow > 0 && !satisfied) {
 				// Right after a request Create blends the arrow towards white (sent) or red (failed).
 				FactoryPanelConnection connection = panel == null ? null : panel.targetedBy.get(source.from());
 				boolean success = connection == null || connection.success;

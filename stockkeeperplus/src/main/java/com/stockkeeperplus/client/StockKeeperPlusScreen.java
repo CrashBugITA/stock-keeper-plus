@@ -59,6 +59,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		gaugeTab = new GaugeTab(this);
 		storageTab = new StorageTab(this);
 		tab = lastTab;
+		checkTabStillVisible();
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -74,7 +75,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	}
 
 	private void restoreCart() {
-		if (!usesSavedCart())
+		if (!usesSavedCart() || !ClientConfig.rememberOrder())
 			return;
 		List<BigItemStack> saved = CartStore.load(menu.contentHolder.getLevel()
 			.dimension(), menu.contentHolder.getBlockPos(), registries());
@@ -85,18 +86,54 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	}
 
 	private void saveCart() {
-		if (!usesSavedCart())
+		if (!usesSavedCart() || !ClientConfig.rememberOrder())
 			return;
 		CartStore.save(menu.contentHolder.getLevel()
 			.dimension(), menu.contentHolder.getBlockPos(), itemsToOrder, registries());
 	}
 
+	// Search text kept between openings, like the cart. Create builds a new, empty search box every
+	// time the screen is laid out (also when the window is resized), so the text is put back there.
+
+	private boolean searchRestored;
+
+	private void restoreSearch(@Nullable String previous) {
+		if (previous != null) { // the window was resized: keep what was typed
+			searchBox.setValue(previous);
+			return;
+		}
+		if (searchRestored || !usesSavedCart() || !ClientConfig.rememberSearch())
+			return;
+		searchRestored = true;
+		if (!searchBox.getValue()
+			.isEmpty())
+			return; // JEI search sync already filled it in
+		String saved = CartStore.loadSearch(menu.contentHolder.getLevel()
+			.dimension(), menu.contentHolder.getBlockPos());
+		if (saved.isEmpty())
+			return;
+		searchBox.setValue(saved);
+		refreshSearchNextTick = true;
+		accessor().stockkeeperplus$syncJEI(false);
+	}
+
+	private void saveSearch() {
+		if (!usesSavedCart() || !ClientConfig.rememberSearch())
+			return;
+		CartStore.saveSearch(menu.contentHolder.getLevel()
+			.dimension(), menu.contentHolder.getBlockPos(), searchBox.getValue());
+	}
+
 	@Override
 	protected void init() {
+		String previousSearch = searchBox == null ? null : searchBox.getValue();
 		super.init();
+		restoreSearch(previousSearch);
 		layoutSearchBox();
 		// Keep JEI's side panels away from the tabs.
-		getExtraAreas().add(new Rect2i(tabX(), tabY(0), TAB_WIDTH, (TAB_COUNT - 1) * TAB_SPACING + TAB_HEIGHT));
+		int[] tabs = visibleTabs();
+		if (tabs.length > 0)
+			getExtraAreas().add(new Rect2i(tabX(), tabY(0), TAB_WIDTH, (tabs.length - 1) * TAB_SPACING + TAB_HEIGHT));
 		if (tab == TAB_GAUGES)
 			gaugeTab.refreshNow();
 		refreshStorage();
@@ -129,6 +166,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	@Override
 	protected void containerTick() {
 		super.containerTick();
+		checkTabStillVisible();
 		if (displayedItems != lastProcessedItems)
 			postProcessList();
 		if (tab != TAB_STOCK) {
@@ -174,7 +212,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	}
 
 	private static List<BigItemStack> collectFavorites(List<List<BigItemStack>> lists, SortMode mode) {
-		if (Favorites.isEmpty())
+		if (Favorites.isEmpty() || !ClientConfig.favorites())
 			return List.of();
 		List<BigItemStack> favorites = new ArrayList<>();
 		for (List<BigItemStack> category : lists)
@@ -249,6 +287,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		Set<Integer> hidden = accessor().stockkeeperplus$getHiddenCategories();
 		Favorites.setCollapsed(hidden.remove(FAVORITES_CATEGORY), registries());
 		saveCart();
+		saveSearch();
 		GaugeTracker.save(registries());
 		StorageTracker.save();
 		lastTab = tab;
@@ -256,7 +295,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	}
 
 	private void renderFavoriteStars(GuiGraphics graphics, float scroll) {
-		if (Favorites.isEmpty())
+		if (Favorites.isEmpty() || !ClientConfig.favorites())
 			return;
 		int itemsX = accessor().stockkeeperplus$getItemsX();
 		int itemsY = accessor().stockkeeperplus$getItemsY();
@@ -476,7 +515,7 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	void appendCountTooltip(ItemStack stack, List<Component> lines) {
 		BigItemStack entry = tooltipEntry;
 		// Create passes entry.stack itself to renderTooltip, so identity tells us it is our entry.
-		if (entry == null || entry.stack != stack || lines.isEmpty())
+		if (entry == null || entry.stack != stack || lines.isEmpty() || !ClientConfig.countTooltip())
 			return;
 
 		int maxStack = stack.getMaxStackSize();
@@ -517,20 +556,12 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 			return true;
 		// Numpad Enter alone sends the order (Create only reacts to Shift+Enter, which a numpad Enter
 		// does not give on every keyboard).
-		if (keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+		if (keyCode == GLFW.GLFW_KEY_KP_ENTER && ClientConfig.numpadEnterSends()) {
 			accessor().stockkeeperplus$sendIt();
 			return true;
 		}
 		if (KeyBindings.matches(KeyBindings.FOCUS_SEARCH, keyCode, scanCode)) {
 			focusSearch();
-			return true;
-		}
-
-		// Esc clears a non-empty search first; a second Esc closes the screen as usual.
-		// While the address box is focused, Esc keeps its normal job (closing the suggestions).
-		if (keyCode == GLFW.GLFW_KEY_ESCAPE && !addressBox.isFocused() && !searchBox.getValue()
-			.isEmpty()) {
-			clearSearch();
 			return true;
 		}
 
@@ -550,13 +581,6 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		searchBox.moveCursorToEnd(false);
 		searchBox.setHighlightPos(0); // select everything so typing replaces the old search
 		accessor().stockkeeperplus$setIgnoreTextInput(true); // swallow a stray 'f' character
-	}
-
-	private void clearSearch() {
-		searchBox.setValue("");
-		refreshSearchNextTick = true;
-		moveToTopNextTick = true;
-		accessor().stockkeeperplus$syncJEI(false);
 	}
 
 	private void clearCart() {
@@ -751,7 +775,8 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		}
 		if (clickSortButton(mouseX, mouseY, button))
 			return true;
-		if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hasAltDown() && toggleFavoriteUnderMouse(mouseX, mouseY))
+		if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hasAltDown() && ClientConfig.favorites()
+			&& toggleFavoriteUnderMouse(mouseX, mouseY))
 			return true;
 		if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && itemScroll.settled()) {
 			CategoryButton clicked = categoryButtonAt(mouseX, mouseY, itemScroll.getChaseTarget());
@@ -788,7 +813,6 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	private static final int TAB_STOCK = 0;
 	private static final int TAB_GAUGES = 1;
 	private static final int TAB_STORAGE = 2;
-	private static final int TAB_COUNT = 3;
 	private static final String[] TAB_NAMES = { "stockkeeperplus.tab.stock", "stockkeeperplus.tab.gauges",
 		"stockkeeperplus.tab.storage" };
 
@@ -809,8 +833,32 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		return getGuiLeft() - 14;
 	}
 
-	private int tabY(int index) {
-		return getGuiTop() + 22 + index * TAB_SPACING;
+	/** Top of the tab drawn in the given place (0 = first). */
+	private int tabY(int place) {
+		return getGuiTop() + 22 + place * TAB_SPACING;
+	}
+
+	/** The tabs turned on in the config, top to bottom; none at all when only the Stock tab is left. */
+	private static int[] visibleTabs() {
+		boolean gauges = ClientConfig.gaugesTab();
+		boolean storage = ClientConfig.storageTab();
+		if (!gauges && !storage)
+			return new int[0];
+		if (!gauges)
+			return new int[] { TAB_STOCK, TAB_STORAGE };
+		if (!storage)
+			return new int[] { TAB_STOCK, TAB_GAUGES };
+		return new int[] { TAB_STOCK, TAB_GAUGES, TAB_STORAGE };
+	}
+
+	/** Goes back to the Stock tab if the open tab was turned off in the config. */
+	private void checkTabStillVisible() {
+		if (tab == TAB_STOCK)
+			return;
+		for (int visible : visibleTabs())
+			if (visible == tab)
+				return;
+		tab = TAB_STOCK;
 	}
 
 	private static ItemStack tabIcon(int index) {
@@ -826,17 +874,20 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 		// The rightmost column is hidden under the window's edge.
 		if (mouseX < tabX() || mouseX >= tabX() + TAB_WIDTH - 1)
 			return -1;
-		for (int i = 0; i < TAB_COUNT; i++)
-			if (mouseY >= tabY(i) && mouseY < tabY(i) + TAB_HEIGHT)
-				return i;
+		int[] tabs = visibleTabs();
+		for (int place = 0; place < tabs.length; place++)
+			if (mouseY >= tabY(place) && mouseY < tabY(place) + TAB_HEIGHT)
+				return tabs[place];
 		return -1;
 	}
 
 	private void renderTabs(GuiGraphics graphics) {
-		for (int i = 0; i < TAB_COUNT; i++) {
-			graphics.blit(BUTTONS, tabX(), tabY(i), i == tab ? TAB_ACTIVE_U : TAB_INACTIVE_U, TAB_V, TAB_WIDTH, TAB_HEIGHT,
-				BUTTONS_TEXTURE_WIDTH, BUTTONS_TEXTURE_HEIGHT);
-			graphics.renderItem(tabIcon(i), tabX() + 4, tabY(i) + 3);
+		int[] tabs = visibleTabs();
+		for (int place = 0; place < tabs.length; place++) {
+			int i = tabs[place];
+			graphics.blit(BUTTONS, tabX(), tabY(place), i == tab ? TAB_ACTIVE_U : TAB_INACTIVE_U, TAB_V, TAB_WIDTH,
+				TAB_HEIGHT, BUTTONS_TEXTURE_WIDTH, BUTTONS_TEXTURE_HEIGHT);
+			graphics.renderItem(tabIcon(i), tabX() + 4, tabY(place) + 3);
 		}
 	}
 
@@ -917,11 +968,13 @@ public class StockKeeperPlusScreen extends StockKeeperRequestScreen implements I
 	}
 
 	private void renderShelfBar(GuiGraphics graphics) {
+		if (!ClientConfig.storageBar())
+			return;
 		FillBar.render(graphics, shelfBarX(), shelfBarY(), SHELF_BAR_WIDTH, SHELF_BAR_HEIGHT, storageSummary.slotFill());
 	}
 
 	private boolean renderShelfBarTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
-		if (mouseX < shelfBarX() || mouseX >= shelfBarX() + SHELF_BAR_WIDTH || mouseY < shelfBarY() - 1
+		if (!ClientConfig.storageBar() || mouseX < shelfBarX() || mouseX >= shelfBarX() + SHELF_BAR_WIDTH || mouseY < shelfBarY() - 1
 			|| mouseY >= shelfBarY() + SHELF_BAR_HEIGHT + 1)
 			return false;
 		graphics.renderComponentTooltip(font, StorageTab.summaryTooltip(storageSummary), mouseX, mouseY);

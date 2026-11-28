@@ -25,10 +25,11 @@ import net.minecraft.world.level.Level;
 import net.neoforged.fml.loading.FMLPaths;
 
 /**
- * Keeps the Stock Keeper order ("cart") between openings, separately for every Stock Ticker.
+ * Keeps the Stock Keeper order ("cart") and search text between openings, separately for every
+ * Stock Ticker.
  * <p>
  * One readable SNBT file per world or server in config/stockkeeperplus/carts/, with one entry per
- * ticker (dimension + position). The Remote Terminal opens the same ticker, so it shares the cart.
+ * ticker (dimension + position) for the order and one ("...#search") for the search text. The Remote Terminal opens the same ticker, so it shares the cart.
  * Only stays on this computer.
  */
 public final class CartStore {
@@ -95,6 +96,63 @@ public final class CartStore {
 		} catch (IOException | CommandSyntaxException e) {
 			StockKeeperPlus.LOGGER.error("Could not save Stock Keeper cart to {}", file, e);
 		}
+	}
+
+	/** The saved search text, or "" if there is none. */
+	public static String loadSearch(ResourceKey<Level> dimension, BlockPos tickerPos) {
+		CompoundTag root = read();
+		return root == null ? "" : root.getString(searchKey(dimension, tickerPos));
+	}
+
+	/** Saves the search text; an empty one removes the ticker's entry. */
+	public static void saveSearch(ResourceKey<Level> dimension, BlockPos tickerPos, String search) {
+		Path file = file();
+		CompoundTag root = read();
+		if (file == null || root == null)
+			return;
+		String key = searchKey(dimension, tickerPos);
+		if (search.isEmpty()) {
+			if (!root.contains(key))
+				return;
+			root.remove(key);
+		} else {
+			if (search.equals(root.getString(key)))
+				return;
+			root.putString(key, search);
+		}
+		write(file, root);
+	}
+
+	/** The whole file, an empty tag if it does not exist yet, or null if there is no world or it is unreadable. */
+	@Nullable
+	private static CompoundTag read() {
+		Path file = file();
+		if (file == null)
+			return null;
+		if (!Files.exists(file))
+			return new CompoundTag();
+		try {
+			return TagParser.parseTag(Files.readString(file, StandardCharsets.UTF_8));
+		} catch (IOException | CommandSyntaxException e) {
+			StockKeeperPlus.LOGGER.error("Could not read saved Stock Keeper data from {}", file, e);
+			return null;
+		}
+	}
+
+	private static void write(Path file, CompoundTag root) {
+		try {
+			Files.createDirectories(DIR);
+			if (root.isEmpty())
+				Files.deleteIfExists(file);
+			else
+				Files.writeString(file, root.toString(), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			StockKeeperPlus.LOGGER.error("Could not save Stock Keeper data to {}", file, e);
+		}
+	}
+
+	private static String searchKey(ResourceKey<Level> dimension, BlockPos pos) {
+		return tickerKey(dimension, pos) + "#search";
 	}
 
 	private static String tickerKey(ResourceKey<Level> dimension, BlockPos pos) {

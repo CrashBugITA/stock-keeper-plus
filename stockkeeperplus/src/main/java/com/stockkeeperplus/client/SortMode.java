@@ -8,14 +8,16 @@ import java.util.Locale;
 import com.simibubi.create.content.logistics.BigItemStack;
 
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.common.TranslatableEnum;
 
 /**
  * Sort orders for the items inside each Stock Keeper category.
  * Every mode ends with a tie-breaker on the item id, so the order stays stable while the stock
  * refreshes (Create's own order can shuffle items that have the same count).
  */
-public enum SortMode {
+public enum SortMode implements TranslatableEnum {
 	/** Create's default: most items first. */
 	QUANTITY_DESC("quantity_desc"),
 	QUANTITY_ASC("quantity_asc"),
@@ -31,6 +33,12 @@ public enum SortMode {
 
 	public String translationKey() {
 		return "stockkeeperplus.sort." + id;
+	}
+
+	/** Name shown in the config screen. */
+	@Override
+	public Component getTranslatedName() {
+		return Component.translatable(translationKey());
 	}
 
 	public SortMode next() {
