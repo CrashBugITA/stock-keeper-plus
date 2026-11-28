@@ -45,7 +45,6 @@ class StorageTab {
 	private static final int ROW_HEIGHT = 20;
 	private static final int SUMMARY_ROW = 14;
 	private static final int BAR_HEIGHT = 8;
-	private static final int ROW_BAR_WIDTH = 30;
 	private static final int ROW_BAR_HEIGHT = 5;
 
 	private static final ResourceLocation BUTTONS =
@@ -319,24 +318,24 @@ class StorageTab {
 		int textX = x + 22;
 		int right = tagX() - 4;
 
-		// Right side: how full the row is (when the server tells us), and its size.
-		long used = row.usedSlots();
-		String size = sizeText(row);
-		int sizeX = right - font.width(size);
-		graphics.drawString(font, size, sizeX, y + 6, live ? COLOR_DIM : COLOR_STALE, false);
-		if (used >= 0) {
-			sizeX = right - sizeWidth - ROW_BAR_WIDTH - 4;
-			FillBar.render(graphics, sizeX, y + 7, ROW_BAR_WIDTH, ROW_BAR_HEIGHT,
-				row.slots() == 0 ? 0 : (double) used / row.slots());
-		}
-
+		// First line: the name, as wide as the row allows.
 		String name = row.name()
 			.getString() + (row.entries()
 			.size() > 1 ? " x" + row.entries()
 			.size() : "");
 		if (row != editing) {
-			name = fit(font, name, sizeX - textX - 4);
-			text(graphics, font, Component.literal(name), textX, y + 6, live ? COLOR_TEXT : COLOR_STALE);
+			name = fit(font, name, right - textX);
+			text(graphics, font, Component.literal(name), textX, y + 1, live ? COLOR_TEXT : COLOR_STALE);
+		}
+
+		// Second line: how full the row is (when known) and its size, right-aligned so the bars line up.
+		long used = row.usedSlots();
+		String size = sizeText(row);
+		graphics.drawString(font, size, right - font.width(size), y + 11, live ? COLOR_DIM : COLOR_STALE, false);
+		if (used >= 0) {
+			int barRight = right - sizeWidth - 4;
+			FillBar.render(graphics, textX, y + 12, barRight - textX, ROW_BAR_HEIGHT,
+				row.slots() == 0 ? 0 : (double) used / row.slots());
 		}
 
 		// Tag button: put this container in a group, or rename the group
@@ -505,7 +504,7 @@ class StorageTab {
 	private void startEdit(Row row, int rowY) {
 		Font font = Minecraft.getInstance().font;
 		int x = rowX() + 22;
-		nameBox = new EditBox(font, x, rowY + 5, tagX() - 6 - x, 10, Component.empty());
+		nameBox = new EditBox(font, x, rowY + 1, tagX() - 6 - x, 10, Component.empty());
 		nameBox.setMaxLength(40);
 		nameBox.setValue(row.group() != null ? row.group() : "");
 		nameBox.setHint(Component.translatable("stockkeeperplus.storage.group_hint")

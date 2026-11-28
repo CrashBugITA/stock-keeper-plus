@@ -1,0 +1,31 @@
+# Changelog
+
+All notable changes to Stock Keeper Plus. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and versions follow [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Changed
+- Storage tab: each row shows the container name on its own line, with the fill bar and slot count below it,
+  so long names are no longer cut short.
+
+## [0.2.0] - 2026-11-27
+
+First public release, for Minecraft 1.21.1, NeoForge 21.1.219+ and Create 6.0.10.
+
+### Added
+- Sorting button next to the search bar: quantity high to low, low to high, name, mod then name.
+- Favorites (`Alt` + click) with their own category at the top and a star on the slot.
+- The order is saved when the screen closes, per Stock Ticker.
+- Exact counts in item tooltips, with stacks written as on Create's clipboards.
+- Collapse all / expand all categories.
+- Factory Gauges tab: 2D map of the network's gauges with Create's arrows and request animations.
+- Storage tab: one row per container or named group, fill levels, contents on hover (server side needed).
+- Storage fill bar under the order slots.
+- Keys: `Ctrl+F` search, `Esc` clears the search, `Ctrl+Delete` clears the order, numpad `Enter` sends it.
+- JEI recipe row usable on every tab.
+- Optional server part: container contents and gauges or containers outside the client's loaded chunks.
+- English and Italian translations.
+
+[Unreleased]: https://github.com/CrashBugITA/stock-keeper-plus/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/CrashBugITA/stock-keeper-plus/releases/tag/v0.2.0

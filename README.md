@@ -16,7 +16,7 @@ exact counts, keyboard shortcuts, a map of the network's Factory Gauges and an o
 
 ## Download
 
-Get the jar from the [Releases](../../releases) page and put it in the `mods` folder.
+Get the jar from the [Releases](../../releases) page and put it in the `mods` folder. What changed in each version is in the [changelog](CHANGELOG.md).
 
 - **Client only:** everything works except reading what is inside containers. Gauges and containers are read
   from what your client has loaded and remembered between visits.
